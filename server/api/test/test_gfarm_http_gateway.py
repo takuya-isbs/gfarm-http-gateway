@@ -29,6 +29,26 @@ req_headers_basic_auth = {"Authorization": "Basic " + userpass_b64_str}
 req_headers_anon_auth = {}
 
 
+@pytest.mark.asyncio
+async def test_set_env_uses_selected_gfarm_username():
+    request = Mock()
+    request.client.host = "127.0.0.1"
+    request.session = {
+        gfarm_http_gateway.GFARM_USERNAME_SESSION_KEY: "selected-user"
+    }
+    access_token = "access-token"
+    with patch("gfarm_http_gateway.switch_auth_from_session",
+               new=AsyncMock(return_value=(
+                   gfarm_http_gateway.AUTHZ_TYPE_OAUTH,
+                   None,
+                   access_token))):
+        with patch("gfarm_http_gateway.get_user_from_access_token",
+                   return_value="claim-user"):
+            env = await gfarm_http_gateway.set_env(request, None)
+
+    assert env["GFARM_SASL_USER"] == "selected-user"
+
+
 @pytest.fixture
 def mock_claims():
     with patch("jose.jwt.get_unverified_claims") as mock:

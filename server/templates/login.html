@@ -16,9 +16,25 @@
       <h2 id="title" class="mb-4 text-center">Login</h2>
       <div id="error" class="alert alert-danger d-none" role="alert"></div>
 
-      <button id="oidc-btn" class="btn btn-info mb-3 w-100" onclick="location.href='./login_oidc'">
-        Login with OpenID provider
-      </button>
+      <form action="./login_oidc" method="GET">
+        <details class="mb-3">
+          <summary class="text-primary" style="cursor: pointer;">
+            Gfarm username (optional)
+          </summary>
+          <div class="pt-2">
+            <input type="text" class="form-control" id="gfarm-username"
+              name="username" autocomplete="off" />
+            <div class="form-text">
+              Specify the Gfarm account to use, including a group representative
+              configured with <code>xoauth2_group_user</code>. Leave blank to use
+              the username from the OpenID Connect token.
+            </div>
+          </div>
+        </details>
+        <button id="oidc-btn" class="btn btn-info mb-3 w-100" type="submit">
+          Login with OpenID provider
+        </button>
+      </form>
 
       <!-- <hr class="my-4" />
 

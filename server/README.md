@@ -12,10 +12,17 @@ To run gfarm-http-gateway, you need:
 
 ### Gfarm username for OpenID Connect login
 
-On the login page, you can optionally enter the Gfarm username to use for
-Gfarm SASL authentication. When specified, this username takes precedence
-over the username from the OpenID Connect token claim. If it is left empty,
-the token claim is used as before.
+On the login page, you can optionally enter the Gfarm account name to use for
+Gfarm SASL authentication. This may be a group representative configured with
+`xoauth2_group_user`. When specified, this name takes precedence over the
+username from the OpenID Connect token claim. If it is left empty, the token
+claim is used as before.
+
+When using `xoauth2_group_user`, configure the mapping in the SASL
+configuration on the Gfarm servers (`gfmd` and `gfsd`). Restart `gfmd` and
+all relevant `gfsd` processes after changing the configuration. See the
+[cyrus-sasl-xoauth2-idp configuration guide](https://github.com/oss-tsukuba/cyrus-sasl-xoauth2-idp/blob/feature/keycloak/doc/configuration.md#xoauth2_group_user-optional)
+for the server-side setting.
 
 ### gfarm-http-gateway
 `gfarm-http-gateway.conf` is required to run gfarm-http-gateway.  

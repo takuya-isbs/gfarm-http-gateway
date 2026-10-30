@@ -1273,10 +1273,17 @@ async def login_page(request: Request,
 
 
 @app.get("/login_oidc")
-async def login_oidc(request: Request):
+async def login_oidc(request: Request,
+                     username: Optional[str] = Query(None)):
     """
     start OIDC login
     """
+    if username is not None:
+        username = username.strip()
+        if username:
+            request.session[GFARM_USERNAME_SESSION_KEY] = username
+        else:
+            request.session.pop(GFARM_USERNAME_SESSION_KEY, None)
     if OIDC_OVERRIDE_REDIRECT_URI:
         redirect_uri = OIDC_OVERRIDE_REDIRECT_URI
     else:
@@ -1327,6 +1334,7 @@ async def logout(request: Request,
     check_csrf(request, state)
     delete_token(request)
     delete_user_passwd(request)
+    request.session.pop(GFARM_USERNAME_SESSION_KEY, None)
     request.session.pop("error", None)
     url = request.url_for("login_page")
     return RedirectResponse(url=url)
@@ -1526,6 +1534,7 @@ async def switch_auth_from_session(request):
 
 LOG_USERNAME_KEY = "_GFARM_HTTP_USERNAME"
 LOG_CLIENT_IP_KEY = "_GFARM_HTTP_CLIENT_IP"
+GFARM_USERNAME_SESSION_KEY = "gfarm_username"
 
 
 async def set_env(request, authorization):
@@ -1548,7 +1557,9 @@ async def set_env(request, authorization):
     if authz_type == AUTHZ_TYPE_OAUTH:
         access_token = passwd
         try:
-            user = get_user_from_access_token(access_token)
+            user = request.session.get(GFARM_USERNAME_SESSION_KEY)
+            if user is None:
+                user = get_user_from_access_token(access_token)
         except Exception as e:
             logger.error(f"{ipaddr} Invalid Bearer token:"
                          f" access_token={access_token}, error={e}")
