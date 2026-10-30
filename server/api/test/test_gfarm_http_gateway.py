@@ -10,6 +10,8 @@ import zipfile
 import io
 import time
 import json
+import os
+from types import SimpleNamespace
 
 import gfarm_http_gateway
 
@@ -27,6 +29,135 @@ userpass_b64_str = userpass_b64_bin.decode()
 req_headers_basic_auth = {"Authorization": "Basic " + userpass_b64_str}
 
 req_headers_anon_auth = {}
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [(True, True), (False, False), ("yes", True), ("on", True),
+     ("0", False), ("no", False)],
+)
+def test_str2bool(value, expected):
+    assert gfarm_http_gateway.str2bool(value) is expected
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [("a,b", ["a", "b"]), ("", [""])],
+)
+def test_str2list(value, expected):
+    assert gfarm_http_gateway.str2list(value) == expected
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [(None, None), ("", None), ("none", None), ("value", "value"),
+     (123, None)],
+)
+def test_str2none(value, expected):
+    assert gfarm_http_gateway.str2none(value) == expected
+
+
+def test_raise_gfarm_http_error_maps_exception_status():
+    with pytest.raises(gfarm_http_gateway.HTTPException) as caught:
+        gfarm_http_gateway.raise_gfarm_http_error(
+            "gfls", PermissionError("permission denied"), "stdout", ["stderr"])
+
+    assert caught.value.status_code == 403
+    assert caught.value.detail == {
+        "command": "gfls",
+        "message": "permission denied",
+        "stdout": "stdout",
+        "stderr": ["stderr"],
+    }
+
+
+def test_load_config_from_file_filters_and_unquotes(tmp_path):
+    config_file = tmp_path / "gateway.conf"
+    config_file.write_text(
+        'GFARM_HTTP_DEBUG="yes" # enable debug\n'
+        'GFARM_HTTP_ORIGINS=http://localhost:8000,http://localhost:8080\n'
+        'UNRELATED=value\n'
+        'invalid line\n'
+    )
+
+    config = gfarm_http_gateway.load_config_from_file(config_file)
+
+    assert config == {
+        "GFARM_HTTP_DEBUG": "yes",
+        "GFARM_HTTP_ORIGINS": "http://localhost:8000,http://localhost:8080",
+    }
+
+
+def test_load_config_from_env_filters_keys(monkeypatch):
+    monkeypatch.setattr(
+        os,
+        "environ",
+        {
+            "GFARM_HTTP_DEBUG": "yes",
+            "GFARM_HTTP_TMPDIR": "/tmp/gfarm-http-gateway",
+            "UNRELATED": "value",
+        },
+    )
+
+    config = gfarm_http_gateway.load_config_from_env()
+
+    assert config == {
+        "GFARM_HTTP_DEBUG": "yes",
+        "GFARM_HTTP_TMPDIR": "/tmp/gfarm-http-gateway",
+    }
+
+
+def test_manage_tempfiles_creates_private_directories(tmp_path, monkeypatch):
+    tmpdir = tmp_path / "gateway-tmp"
+    monkeypatch.setattr(gfarm_http_gateway, "TMPDIR", str(tmpdir))
+    monkeypatch.setattr(
+        gfarm_http_gateway, "TMPDIR_TOKENS", str(tmpdir / "tokens"))
+    monkeypatch.setattr(
+        gfarm_http_gateway, "TMPDIR_TARTMP", str(tmpdir / "tartmp"))
+
+    gfarm_http_gateway.manage_tempfiles()
+
+    for path in (tmpdir, tmpdir / "tokens", tmpdir / "tartmp"):
+        assert path.is_dir()
+        assert (path.stat().st_mode & 0o777) == 0o700
+
+
+@pytest.mark.parametrize(
+    "st_uid, st_mode, message",
+    [
+        (os.getuid() + 1, 0o700, "must be owned"),
+        (os.getuid(), 0o755, "must be private"),
+    ],
+)
+def test_check_tempdir_mode_rejects_insecure_directory(
+        monkeypatch, st_uid, st_mode, message):
+    monkeypatch.setattr(gfarm_http_gateway, "TMPDIR", "/tmp/test-gateway")
+    monkeypatch.setattr(os.path, "exists", lambda path: True)
+    monkeypatch.setattr(
+        os,
+        "stat",
+        lambda path: SimpleNamespace(st_uid=st_uid, st_mode=st_mode),
+    )
+
+    with pytest.raises(PermissionError, match=message):
+        gfarm_http_gateway.check_tempdir_mode()
+
+
+@pytest.mark.parametrize(
+    "error, exception",
+    [
+        ("No such file or directory", FileNotFoundError),
+        ("Unknown host", FileNotFoundError),
+        ("Permission denied", PermissionError),
+        ("Connection refused", ConnectionRefusedError),
+        ("Authentication error", gfarm_http_gateway.AuthenticationError),
+        ("unexpected error", RuntimeError),
+    ],
+)
+def test_classify_gfarm_error(error, exception):
+    result = gfarm_http_gateway.classify_gfarm_error([error])
+
+    assert isinstance(result, exception)
 
 
 @pytest.mark.asyncio

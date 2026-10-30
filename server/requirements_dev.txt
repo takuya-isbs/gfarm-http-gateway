@@ -6,6 +6,7 @@ itsdangerous
 Jinja2
 loguru
 pytest
+pytest-cov
 pytest-asyncio
 python-jose
 python-multipart

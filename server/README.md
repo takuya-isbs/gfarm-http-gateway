@@ -983,7 +983,8 @@ You can build and test gfarm-http-gateway inside the **gfarm/docker/dist** devel
 - `make test-all` - run all available tests (server + client).
   -  Requires the client to be built first (`cd ../client && make`).
 - `make test` - run the following tests:
-  - `make test-unit` - run API unit tests with pytest.
+  - `make test-unit` - run API unit tests with pytest and display coverage.
+  - `make test-coverage` - run API unit tests and display uncovered lines.
   - `make test-flake8` - run style checks with flake8.
   - `make test-playwright` - run Web UI end-to-end tests with Playwright (must be installed).
 

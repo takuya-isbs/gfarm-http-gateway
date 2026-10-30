@@ -132,6 +132,23 @@ test("Should display the login button for OIDC", async ({ page }) => {
     await expect(page.locator("#oidc-btn")).toBeVisible();
 });
 
+test("Should submit a selected Gfarm group user for OIDC login", async ({
+    page,
+}) => {
+    login = false;
+    await page.goto(FRONTEND_URL);
+    await page.waitForFunction(() => window.location.href.includes("/login"));
+
+    await page.locator("summary").click();
+    await page.fill("#gfarm-username", "groupuser1");
+    const loginRequest = page.waitForRequest((request) =>
+        request.url().includes("/login_oidc")
+    );
+    await page.click("text=Login with OpenID provider");
+
+    expect((await loginRequest).url()).toContain("username=groupuser1");
+});
+
 test("Should log in via OIDC and show the file list", async ({ page }) => {
     login = false;
     await page.goto(FRONTEND_URL);
