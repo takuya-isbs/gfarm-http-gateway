@@ -106,7 +106,22 @@ redis/
 - redis.conf
   - Refer to **[Configuration variables > Redis](#redis)** above
 - gfarm2.conf
-  - set `auth enable sasl` (or `sasl_auth`)
+  - Configure the Gfarm client to use SASL only. For example:
+
+    ```text
+    auth enable sasl *
+    auth disable sasl_auth *
+    auth disable gsi *
+    auth disable gsi_auth *
+    auth disable tls_sharedsecret *
+    auth disable tls_client_certificate *
+    auth disable kerberos *
+    auth disable kerberos_auth *
+    auth disable sharedsecret *
+    ```
+
+  - Do not set `sasl_mechanisms` or `sasl_user` in `gfarm2.conf`; the gateway
+    sets the SASL mechanism and user for each request.
 
 #### 3. Run the Redis container
 
@@ -536,9 +551,7 @@ docker compose up -d
   - Prepare the Gfarm environment **on the same host where gfarm-http-gateway runs**.
   - Ensure `gf*` commands and a valid `gfarm2.conf` are available.
   - Create and use a dedicated user for gfarm-http-gateway (e.g., `gfhg`), and configure that user's Gfarm configuration file (e.g., `/home/gfhg/.gfarm2rc`).
-    - set enable to `sasl` with `auth enable sasl`.
-    - set disable to all other methods with `auth disable <all other methods>`.
-    - Do not set `sasl_mechanisms` or `sasl_user`.
+    - Follow [Option 1 > Prepare Configuration](#2-prepare-configuration) for the Gfarm authentication configuration.
 
 - **gfarm-http-gateway requirements**
   - To install Python and Node.js packages and build the Web UI, run:
@@ -920,6 +933,10 @@ You can build and test gfarm-http-gateway inside the **gfarm/docker/dist** devel
 
 6. **Launch gfarm-http-gateway in c2**
 
+   Use the repository-provided gfarm-http-gateway-specific Gfarm client configuration by following the
+   `gfarm2.conf` authentication guidance in
+   [Option 1 > Prepare Configuration](#2-prepare-configuration).
+
    > **Important:** In this `docker/dist` environment, specify
    > `GFARM_HTTP_GFARM_CONFIG_FILE` explicitly. The setting is not currently
    > required by the gateway configuration, but omitting it may cause Gfarm
@@ -927,7 +944,7 @@ You can build and test gfarm-http-gateway inside the **gfarm/docker/dist** devel
    > user's permissions and configuration.
 
    ```bash
-   GFARM_HTTP_GFARM_CONFIG_FILE=/usr/local/etc/gfarm2.conf \
+   GFARM_HTTP_GFARM_CONFIG_FILE=/home/ubuntu/gfarm/gfarm-http-gateway/server/gfarm2.conf-for-gfarm-http-gateway \
      bin/gfarm-http-gateway-dev-for-docker-dist.sh --port 8000
    ```
 

@@ -1,0 +1,16 @@
+metadb_server_host c1
+metadb_server_port 601
+
+sockopt keepalive
+spool_server_cred_type host
+spool_server_cred_service gfsd
+metadb_server_list c1 c2 c3
+auth enable sasl *
+auth disable sasl_auth *
+auth disable gsi *
+auth disable gsi_auth *
+auth disable tls_sharedsecret *
+auth disable tls_client_certificate *
+auth disable kerberos *
+auth disable kerberos_auth *
+auth disable sharedsecret *
