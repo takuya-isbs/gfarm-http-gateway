@@ -10,6 +10,13 @@ To run gfarm-http-gateway, you need:
 
 ## Configuration variables
 
+### Gfarm username for OpenID Connect login
+
+On the login page, you can optionally enter the Gfarm username to use for
+Gfarm SASL authentication. When specified, this username takes precedence
+over the username from the OpenID Connect token claim. If it is left empty,
+the token claim is used as before.
+
 ### gfarm-http-gateway
 `gfarm-http-gateway.conf` is required to run gfarm-http-gateway.  
 Default values are defined in [`gfarm-http-gateway.conf.default`](./gfarm-http-gateway.conf.default).
@@ -913,8 +920,15 @@ You can build and test gfarm-http-gateway inside the **gfarm/docker/dist** devel
 
 6. **Launch gfarm-http-gateway in c2**
 
+   > **Important:** In this `docker/dist` environment, specify
+   > `GFARM_HTTP_GFARM_CONFIG_FILE` explicitly. The setting is not currently
+   > required by the gateway configuration, but omitting it may cause Gfarm
+   > commands to use the runtime user's `~/.gfarm2rc` and behave with that
+   > user's permissions and configuration.
+
    ```bash
-   bin/gfarm-http-gateway-dev-for-docker-dist.sh --port 8000
+   GFARM_HTTP_GFARM_CONFIG_FILE=/usr/local/etc/gfarm2.conf \
+     bin/gfarm-http-gateway-dev-for-docker-dist.sh --port 8000
    ```
 
    - Running this command starts gfarm-http-gateway in **developer mode** (debug logging, auto reload).
