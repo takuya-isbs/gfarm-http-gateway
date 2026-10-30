@@ -3,6 +3,7 @@ import base64
 import bz2
 from datetime import datetime
 import gzip
+import inspect
 import json
 import logging
 from logging.handlers import SysLogHandler
@@ -652,6 +653,21 @@ else:
 
 templates = Jinja2Templates(directory="templates")
 
+
+def template_response(request, name, context):
+    """Create a template response on old and new Starlette versions."""
+    parameters = inspect.signature(templates.TemplateResponse).parameters
+    if "request" in parameters:
+        # New API: Starlette 0.29.0 (FastAPI 0.108.0 and later) added
+        # ``request`` as the first argument.
+        return templates.TemplateResponse(request, name, context)
+    else:
+        # Old API: TemplateResponse(name, context).  This signature was
+        # deprecated in Starlette 0.29.0 and removed in Starlette 1.0.
+        context = {"request": request, **context}
+        return templates.TemplateResponse(name, context)
+
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.mount("/assets",
@@ -1183,22 +1199,18 @@ async def debug_page(request: Request,
             + logout_url + "&state=" + csrf_token
         claims = jwt.get_unverified_claims(access_token)
         exp = claims.get("exp")
-    return templates.TemplateResponse("index.html",
-                                      {"request": request,
-                                       "error": error,
-                                       "csrf_token": csrf_token,
-                                       "login_ok": login_ok,
-                                       "access_token": access_token,
-                                       "parsed_at": pat,
-                                       "sasl_username": sasl_username,
-                                       "logout_url": logout_url,
-                                       "logout_url_with_oidc":
-                                       logout_url_with_oidc,
-                                       "logout_url_oidc_only":
-                                       logout_url_oidc_only,
-                                       "current_time": current_time,
-                                       "exp": exp,
-                                       })
+    return template_response(request, "index.html",
+                             {"error": error,
+                              "csrf_token": csrf_token,
+                              "login_ok": login_ok,
+                              "access_token": access_token,
+                              "parsed_at": pat,
+                              "sasl_username": sasl_username,
+                              "logout_url": logout_url,
+                              "logout_url_with_oidc": logout_url_with_oidc,
+                              "logout_url_oidc_only": logout_url_oidc_only,
+                              "current_time": current_time,
+                              "exp": exp})
 
 
 @app.get("/user_info")
@@ -1255,10 +1267,9 @@ async def login_page(request: Request,
     error = request.session.get("error", "")
     request.session.pop("error", None)
     request.session["next_url"] = redirect
-    return templates.TemplateResponse("login.html",
-                                      {"request": request,
-                                       "error": error,
-                                       "csrf_token": csrf_token})
+    return template_response(request, "login.html",
+                             {"error": error,
+                              "csrf_token": csrf_token})
 
 
 @app.get("/login_oidc")
