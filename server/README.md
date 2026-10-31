@@ -988,7 +988,12 @@ You can build and test gfarm-http-gateway inside the **gfarm/docker/dist** devel
   - `make test-flake8` - run style checks with flake8.
   - `make test-playwright` - run Web UI end-to-end tests with Playwright (must be installed).
 
-### To freeze python packages
+### To pin Python package versions
+
+> **Note:** As a general rule, keep the implementation aligned with the latest stable and compatible library versions; do not use freezing to avoid necessary updates. If an update must be deferred, record the compatibility reason and a plan to resume updating.
+
+Install the dependencies defined in `requirements_dev.txt`, then record the
+versions actually used in `requirements.txt`.
 
 - Edit requirements_dev.txt
   - Ex.: `uvicorn>=0.34`
@@ -997,14 +1002,28 @@ You can build and test gfarm-http-gateway inside the **gfarm/docker/dist** devel
 
 ### To update requirements.txt for latest
 
+GitHub Actions automatically runs the tests and updates `requirements.txt` when
+the installed Python packages differ from the committed file. However, the
+recommended procedure is to update and test the file locally before pushing:
+
 ```
-make test-unit
+make setup-latest
+make test
 make freeze
+git diff -- requirements.txt
 git add requirements.txt
-git commit requirements.txt
+git commit -m "build(python): update frozen requirements"
+git push
 ```
 
+When the locally generated `requirements.txt` is pushed with the changes, the
+GitHub Actions update step should find no further changes to commit.
+
 ### To update frontend/app/react-app/package.json for latest
+
+GitHub Actions does not automatically update `package.json` or
+`package-lock.json`. During development and operation, maintain the frontend
+dependencies by following the update procedure in the frontend README.
 
 See `Update packages` in [frontend/app/react-app/README.md](./frontend/app/react-app/README.md)
 
@@ -1014,5 +1033,6 @@ See `Update packages` in [frontend/app/react-app/README.md](./frontend/app/react
 - See: <https://github.com/ad-m/github-push-action?tab=readme-ov-file#requirements-and-prerequisites>
   - (Requirements and Prerequisites)
   - `Read and write permissions` for Actions is required
-- Auto `make freeze`, commit and push
-- ./requirements.txt may be updated/committed/pushed automatically on GitHub, so `git pull` on your working directory may be required after `git push`
+- After the tests, Actions runs `make freeze` and automatically commits and pushes `requirements.txt` when it has changed.
+- If `requirements.txt` was updated and pushed locally first, the Actions update step should make no additional change.
+- `requirements.txt` may be updated, committed, and pushed automatically on GitHub, so `git pull` on your working directory may be required after `git push`.
