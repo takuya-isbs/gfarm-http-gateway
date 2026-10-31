@@ -1199,7 +1199,7 @@ async def debug_page(request: Request,
             + logout_url + "&state=" + csrf_token
         claims = jwt.get_unverified_claims(access_token)
         exp = claims.get("exp")
-    return template_response(request, "index.html",
+    return template_response(request, "debug.html",
                              {"error": error,
                               "csrf_token": csrf_token,
                               "login_ok": login_ok,

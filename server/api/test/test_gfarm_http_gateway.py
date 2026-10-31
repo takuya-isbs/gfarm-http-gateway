@@ -569,6 +569,41 @@ async def test_whoami_basic_session(mock_claims, mock_access_token_none,
     assert response.text == expect_gfwhoami_stdout
 
 
+def test_debug_page_uses_current_api_paths(monkeypatch):
+    monkeypatch.setattr(
+        gfarm_http_gateway,
+        "oidc_logout_url",
+        AsyncMock(return_value=""),
+    )
+
+    with TestClient(gfarm_http_gateway.app) as debug_client:
+        response = debug_client.get("/debug")
+        script_response = debug_client.get("/static/js/gfarm.js")
+
+    assert response.status_code == 200
+    assert "gfarm-http-gateway Debug API" in response.text
+    assert '<select id="ls_output_format">' in response.text
+    assert '<option value="plain" selected>plain</option>' in response.text
+    assert '<option value="json">json</option>' in response.text
+    assert script_response.status_code == 200
+
+    script = script_response.text
+    assert "./conf/me" in script
+    assert "./dir" in script
+    assert '"show_hidden"' in script
+    assert '"output_format"' in script
+    assert 'document.getElementById("ls_output_format")' in script
+    assert 'params.append("output_format", lsOutputFormat.value)' in script
+
+    chmod_script = script.split("async function chmod()", 1)[1]
+    chmod_script = chmod_script.split("async function gfptar()", 1)[0]
+    assert 'method: "PUT"' in chmod_script
+
+    gfptar_script = script.split("async function gfptar()", 1)[1]
+    assert "source: [src]" in gfptar_script
+    assert "options: []" in gfptar_script
+
+
 expect_gfls_stdout = "test gfls stdout"
 expect_gfls = ((expect_gfls_stdout).encode(), b"error", 0)
 

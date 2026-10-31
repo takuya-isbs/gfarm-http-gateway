@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>gfarm-http-gateway API</title>
+<title>gfarm-http-gateway Debug API</title>
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -69,11 +69,13 @@ progress {
         <button onclick="whoami2()">Who am I (CORS) (fetch from a remote host usinig new token from /access_token API)</button>
         <div id="whoami_out2"></div>
         </p>
+        {% if access_token %}
         <p>
         <input type="text" id="whoami_url3" value="http://c3:8000">
         <button onclick="whoami3()">Who am I (CORS) (fetch from a remote host usinig token from HTML (may use old token))</button>
         <div id="whoami_out3"></div>
         </p>
+        {% endif %}
         <p>
         <input type="text" id="whoami_url4" value="http://c3:8000">
         <button onclick="whoamiWithoutAuth()">Who am I (invalid access token)</button>
@@ -91,15 +93,22 @@ progress {
         <input type="text" id="ls_path" value="/tmp">
         <button onclick="list()">gfls</button><br/>
         <input type="checkbox" id="ls_all">
-        <label for="ls_all">a=1(-a: all)</label>
+        <label for="ls_all">show_hidden=1(-a: all)</label>
         <input type="checkbox" id="ls_long">
-        <label for="ls_long">l=1(-l: long)</label>
+        <label for="ls_long">long_format=1(-l: long)</label>
         <input type="checkbox" id="ls_recursive">
-        <label for="ls_recursive">R=1(-R: Recursive)</label>
+        <label for="ls_recursive">recursive=1(-R: Recursive)</label>
         <input type="checkbox" id="ls_effperm">
-        <label for="ls_effperm">e=1(-e: effective perm)</label>
+        <label for="ls_effperm">effperm=1(-e: effective perm)</label>
         <input type="checkbox" id="ls_ign_err">
         <label for="ls_ign_err">ign_err=1</label>
+
+        <br/>
+        <label for="ls_output_format">output_format:</label>
+        <select id="ls_output_format">
+        <option value="plain" selected>plain</option>
+        <option value="json">json (JSON Lines, NDJSON)</option>
+        </select>
         <table><tr><td><pre><div id="ls_out"></div></pre></td></tr></table>
         </p>
 
@@ -129,6 +138,7 @@ progress {
         </p>
 
     <h2>(gfrm) API: DELETE /file/{path}</h2>
+        <p><strong>Warning:</strong> This operation deletes the specified Gfarm file without confirmation.</p>
         <p>
         <label for="rm_path">Gfarm file:</label>
         <input type="text" id="rm_path" value="/tmp/testfile.txt">
@@ -145,6 +155,7 @@ progress {
         </p>
 
     <h2>(gfrmdir) API: DELETE /dir/{path}</h2>
+        <p><strong>Warning:</strong> This operation deletes the specified Gfarm directory without confirmation.</p>
         <p>
         <label for="rmdir_path">Gfarm directory:</label>
         <input type="text" id="rmdir_path" value="/tmp/testdir">
@@ -171,7 +182,7 @@ progress {
         <table><tr><td><pre><div id="stat_output"></div></pre></td></tr></table>
         </p>
 
-   <h2>(gfchmod) API: POST /attr/{path}</h2>
+   <h2>(gfchmod) API: PUT /attr/{path}</h2>
         <p>
         <label for="chmod_path">Gfarm path:</label>
         <input type="text" id="chmod_path" value="/tmp/testdir"> <br/>
@@ -191,7 +202,7 @@ progress {
         <label for="gfptar_src">Gfarm path (source):</label>
         <input type="text" id="gfptar_src" value="./testdir"> <br/>
         <label for="gfptar_dest">Gfarm path (destination):</label>
-        <input type="text" id="gfptar_dest" value="gfarm:/tmp/testoutdir">
+        <input type="text" id="gfptar_dest" value="gfarm:/tmp/testoutdir.gfptar">
         <button onclick="gfptar()">gfptar</button><br/>
         <table><tr><td>Input data (JSON)</td></tr><tr><td><pre><div id="gfptar_input"></div></pre></td></tr></table>
         <div id="gfptar_output"></div>

@@ -54,7 +54,7 @@ async function my_fetch(url, options = {}) {
 async function whoami1() {
   const whoamiOut = document.getElementById("whoami_out1");
   try {
-    const response = await fetch("./c/me");
+    const response = await fetch("./conf/me");
     if (!response.ok) {
       throw new Error(`HTTP error: ${response.status}`);
     }
@@ -74,7 +74,7 @@ async function whoami2() {
     if (!response.ok) {
       throw new Error(`HTTP error: ${response.status}`);
     }
-    const url = removeLastSlash(whoamiURL) + "/c/me";
+    const url = removeLastSlash(whoamiURL) + "/conf/me";
     const data = await response.json();
     const response2 = await fetch(url, {
       headers: {
@@ -82,7 +82,7 @@ async function whoami2() {
       },
     });
     if (!response2.ok) {
-      throw new Error(`HTTP error: ${response.status}`);
+      throw new Error(`HTTP error: ${response2.status}`);
     }
     const text = await response2.text();
     whoamiOut.textContent = text;
@@ -96,7 +96,7 @@ async function whoami3() {
   const whoamiURL = document.getElementById("whoami_url3").value;
   const whoamiOut = document.getElementById("whoami_out3");
   try {
-    const url = removeLastSlash(whoamiURL) + "/c/me";
+    const url = removeLastSlash(whoamiURL) + "/conf/me";
     const atElement = document.getElementById("access_token");
     const access_token = atElement.textContent;
     const response = await fetch(url, {
@@ -120,7 +120,7 @@ async function whoamiWithoutAuth() {
   const whoamiURL = document.getElementById("whoami_url4").value;
   const whoamiOut = document.getElementById("whoami_out4");
   try {
-    const url = removeLastSlash(whoamiURL) + "/c/me";
+    const url = removeLastSlash(whoamiURL) + "/conf/me";
     const response = await fetch(url, {
       headers: {
         Authorization: "Bearer " + "DUMMY",
@@ -142,7 +142,7 @@ async function whoamiAnonymous() {
   const whoamiURL = document.getElementById("whoami_url5").value;
   const whoamiOut = document.getElementById("whoami_out5");
   try {
-    const url = removeLastSlash(whoamiURL) + "/c/me";
+    const url = removeLastSlash(whoamiURL) + "/conf/me";
     const response = await fetch(url);
     const text = await response.text();
     whoamiOut.textContent = text;
@@ -160,27 +160,28 @@ async function list() {
   const lsRecursive = document.getElementById("ls_recursive");
   const lsEffectivePerm = document.getElementById("ls_effperm");
   const lsIgnoreError = document.getElementById("ls_ign_err");
+  const lsOutputFormat = document.getElementById("ls_output_format");
   const path = lsPath.value.replace(/^\/+/g, "");
   try {
-    let api_dir = "./d";
+    let api_dir = "./dir";
     let fullpath = api_dir + "/" + path;
     let params = new URLSearchParams();
     if (lsAll.checked) {
-      params.append("a", 1);
+      params.append("show_hidden", 1);
     }
     if (lsLong.checked) {
-      params.append("l", 1);
+      params.append("long_format", 1);
     }
     if (lsRecursive.checked) {
-      params.append("R", 1);
+      params.append("recursive", 1);
     }
     if (lsEffectivePerm.checked) {
-      params.append("e", 1);
+      params.append("effperm", 1);
     }
     if (lsIgnoreError.checked) {
       params.append("ign_err", 1);
     }
-    params.append("format_type", "plain");
+    params.append("output_format", lsOutputFormat.value);
     let params_str = params.toString();
     if (params_str) {
       fullpath = `${fullpath}?${params_str}`;
@@ -602,7 +603,7 @@ async function chmod() {
 
     try {
       const response = await my_fetch(url, {
-        method: "POST",
+        method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
@@ -634,13 +635,9 @@ async function gfptar() {
       {
         command: cmd,
         basedir: base,
-        source: src,
+        source: [src],
         outdir: dest,
-        exclude: null,
-        jobs: null,
-        size: null,
-        type: null,
-        compress: null,
+        options: [],
       },
       null,
       2
@@ -648,13 +645,17 @@ async function gfptar() {
     input.textContent = data;
 
     try {
-      const response = await fetch("/gfptar", {
+      const response = await fetch("./gfptar", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: data,
       });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+      }
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder("utf-8");
@@ -664,7 +665,7 @@ async function gfptar() {
         const { done, value } = await reader.read();
         if (done) break;
 
-        text = decoder.decode(value, { stream: true });
+        const text = decoder.decode(value, { stream: true });
         console.log("Received:", text);
         output.textContent = text;
         buffer += text;
