@@ -10,6 +10,7 @@ on:
 
 jobs:
   test:
+    # Keep ubuntu-latest so future Ubuntu updates expose compatibility problems across the CI checks.
     runs-on: ubuntu-latest
     steps:
       - name: checkout

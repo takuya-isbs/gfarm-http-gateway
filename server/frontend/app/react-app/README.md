@@ -7,7 +7,7 @@
 ## Install dependencies
 
 ```bash
-npm install
+npm ci
 ```
 
 ## Development
@@ -44,9 +44,15 @@ npm run lint:fix  # Auto-fix issues
 
 ### End-to-End Tests (Playwright)
 
-Install playwright:
+Install Playwright and the Chromium browser used by the standard test target:
 ```bash
-npx playwright install-deps
+npx playwright install --with-deps chromium
+```
+
+To run all configured browser projects, install all browsers instead:
+
+```bash
+npx playwright install --with-deps
 ```
 
 Run all tests:
