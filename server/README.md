@@ -988,6 +988,20 @@ You can build and test gfarm-http-gateway inside the **gfarm/docker/dist** devel
   - `make test-flake8` - run style checks with flake8.
   - `make test-playwright` - run Web UI end-to-end tests with Playwright (must be installed).
 
+### View the Playwright HTML report
+
+After running the tests, start the report server from the `server` directory:
+
+```bash
+npx --prefix frontend/app/react-app playwright show-report \
+    frontend/app/react-app/playwright-report \
+    --host 0.0.0.0 \
+    --port 9323
+```
+
+When c2 is accessible through Squid, open <http://c2:9323/> in a browser. Stop
+the temporary report server with `Ctrl+C` after viewing the report.
+
 ### To pin Python package versions
 
 > **Note:** As a general rule, keep the implementation aligned with the latest stable and compatible library versions; do not use freezing to avoid necessary updates. If an update must be deferred, record the compatibility reason and a plan to resume updating.
