@@ -32,6 +32,7 @@ progress {
 <body>
     <h1>Gfarm HTTP Gateway (Examples of API usage)</h1>
 
+    <p>This page provides selected API examples, not a complete list. See the Swagger UI below for all available APIs and parameters.</p>
     <p><a href="./docs">API docs (Swagger UI)</a></p>
     <p><a href="./redoc">API docs (ReDoc)</a></p>
 
@@ -104,6 +105,11 @@ progress {
         <label for="ls_ign_err">ign_err=1</label>
 
         <br/>
+        <label for="ls_time_format">time_format:</label>
+        <select id="ls_time_format">
+        <option value="full" selected>full</option>
+        <option value="short">short</option>
+        </select>
         <label for="ls_output_format">output_format:</label>
         <select id="ls_output_format">
         <option value="plain" selected>plain</option>
@@ -142,6 +148,10 @@ progress {
         <p>
         <label for="rm_path">Gfarm file:</label>
         <input type="text" id="rm_path" value="/tmp/testfile.txt">
+        <input type="checkbox" id="rm_force">
+        <label for="rm_force">force=1(-f: force)</label>
+        <input type="checkbox" id="rm_recursive">
+        <label for="rm_recursive">recursive=1(-r: recursive)</label>
         <button onclick="removeFile()">gfrm</button>
         <div id="rm_output"></div>
         </p>
@@ -150,6 +160,8 @@ progress {
         <p>
         <label for="mkdir_path">Gfarm directory:</label>
         <input type="text" id="mkdir_path" value="/tmp/testdir">
+        <input type="checkbox" id="mkdir_p">
+        <label for="mkdir_p">p=1(-p: create parent directories)</label>
         <button onclick="createDir()">gfmkdir</button><br/>
         <div id="mkdir_output"></div>
         </p>
@@ -178,6 +190,10 @@ progress {
         <p>
         <label for="stat_path">Gfarm path:</label>
         <input type="text" id="stat_path" value="/tmp/testdir">
+        <input type="checkbox" id="stat_check_sum">
+        <label for="stat_check_sum">check_sum=1</label>
+        <input type="checkbox" id="stat_check_symlink">
+        <label for="stat_check_symlink">check_symlink=1</label>
         <button onclick="stat()">gfstat</button><br/>
         <table><tr><td><pre><div id="stat_output"></div></pre></td></tr></table>
         </p>
@@ -203,6 +219,8 @@ progress {
         <input type="text" id="gfptar_src" value="./testdir"> <br/>
         <label for="gfptar_dest">Gfarm path (destination):</label>
         <input type="text" id="gfptar_dest" value="gfarm:/tmp/testoutdir.gfptar">
+        <label for="gfptar_options">gfptar options (space-separated):</label>
+        <input type="text" id="gfptar_options" value="">
         <button onclick="gfptar()">gfptar</button><br/>
         <table><tr><td>Input data (JSON)</td></tr><tr><td><pre><div id="gfptar_input"></div></pre></td></tr></table>
         <div id="gfptar_output"></div>

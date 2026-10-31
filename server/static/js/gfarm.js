@@ -160,6 +160,7 @@ async function list() {
   const lsRecursive = document.getElementById("ls_recursive");
   const lsEffectivePerm = document.getElementById("ls_effperm");
   const lsIgnoreError = document.getElementById("ls_ign_err");
+  const lsTimeFormat = document.getElementById("ls_time_format");
   const lsOutputFormat = document.getElementById("ls_output_format");
   const path = lsPath.value.replace(/^\/+/g, "");
   try {
@@ -181,6 +182,7 @@ async function list() {
     if (lsIgnoreError.checked) {
       params.append("ign_err", 1);
     }
+    params.append("time_format", lsTimeFormat.value);
     params.append("output_format", lsOutputFormat.value);
     let params_str = params.toString();
     if (params_str) {
@@ -466,11 +468,21 @@ async function uploadFile() {
 
 async function removeFile() {
   let path = document.getElementById("rm_path").value;
+  const force = document.getElementById("rm_force").checked;
+  const recursive = document.getElementById("rm_recursive").checked;
   const output = document.getElementById("rm_output");
   if (path) {
     const epath = encodePath(path);
     try {
-      const url = `./file${epath}`;
+      const params = new URLSearchParams();
+      if (force) {
+        params.append("force", 1);
+      }
+      if (recursive) {
+        params.append("recursive", 1);
+      }
+      const query = params.toString();
+      const url = `./file${epath}${query ? "?" + query : ""}`;
       const response = await my_fetch(url, {
         method: "DELETE",
       });
@@ -488,13 +500,13 @@ async function removeFile() {
   }
 }
 
-async function dirCommon(pathId, outputId, method, message) {
+async function dirCommon(pathId, outputId, method, message, query = "") {
   const path = document.getElementById(pathId).value;
   const output = document.getElementById(outputId);
   if (path) {
     const epath = encodePath(path);
     try {
-      const url = `./dir${epath}`;
+      const url = `./dir${epath}${query}`;
       const response = await my_fetch(url, {
         method: method,
       });
@@ -513,7 +525,9 @@ async function dirCommon(pathId, outputId, method, message) {
 }
 
 async function createDir() {
-  await dirCommon("mkdir_path", "mkdir_output", "PUT", "created");
+  const p = document.getElementById("mkdir_p").checked;
+  const params = p ? "?p=1" : "";
+  await dirCommon("mkdir_path", "mkdir_output", "PUT", "created", params);
 }
 
 async function removeDir() {
@@ -561,11 +575,21 @@ async function move() {
 
 async function stat() {
   const path = document.getElementById("stat_path").value;
+  const checkSum = document.getElementById("stat_check_sum").checked;
+  const checkSymlink = document.getElementById("stat_check_symlink").checked;
   const output = document.getElementById("stat_output");
   if (path) {
     let filename = basename(path);
     const epath = encodePath(path);
-    const url = `./attr${epath}`;
+    const params = new URLSearchParams();
+    if (checkSum) {
+      params.append("check_sum", 1);
+    }
+    if (checkSymlink) {
+      params.append("check_symlink", 1);
+    }
+    const query = params.toString();
+    const url = `./attr${epath}${query ? "?" + query : ""}`;
     try {
       const response = await fetch(url);
       if (!response.ok) {
@@ -628,6 +652,8 @@ async function gfptar() {
   const base = document.getElementById("gfptar_base").value;
   const src = document.getElementById("gfptar_src").value;
   const dest = document.getElementById("gfptar_dest").value;
+  const optionsText = document.getElementById("gfptar_options").value.trim();
+  const options = optionsText ? optionsText.split(/\s+/) : [];
   const input = document.getElementById("gfptar_input");
   const output = document.getElementById("gfptar_output");
   if (src && dest) {
@@ -637,7 +663,7 @@ async function gfptar() {
         basedir: base,
         source: [src],
         outdir: dest,
-        options: [],
+        options: options,
       },
       null,
       2

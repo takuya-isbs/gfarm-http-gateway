@@ -569,7 +569,7 @@ async def test_whoami_basic_session(mock_claims, mock_access_token_none,
     assert response.text == expect_gfwhoami_stdout
 
 
-def test_debug_page_uses_current_api_paths(monkeypatch):
+def test_debug_page_uses_current_api_contract(monkeypatch):
     monkeypatch.setattr(
         gfarm_http_gateway,
         "oidc_logout_url",
@@ -582,9 +582,17 @@ def test_debug_page_uses_current_api_paths(monkeypatch):
 
     assert response.status_code == 200
     assert "gfarm-http-gateway Debug API" in response.text
+    assert "not a complete list" in response.text
     assert '<select id="ls_output_format">' in response.text
     assert '<option value="plain" selected>plain</option>' in response.text
     assert '<option value="json">json</option>' in response.text
+    assert '<select id="ls_time_format">' in response.text
+    assert 'id="rm_force"' in response.text
+    assert 'id="rm_recursive"' in response.text
+    assert 'id="mkdir_p"' in response.text
+    assert 'id="stat_check_sum"' in response.text
+    assert 'id="stat_check_symlink"' in response.text
+    assert 'id="gfptar_options"' in response.text
     assert script_response.status_code == 200
 
     script = script_response.text
@@ -593,7 +601,13 @@ def test_debug_page_uses_current_api_paths(monkeypatch):
     assert '"show_hidden"' in script
     assert '"output_format"' in script
     assert 'document.getElementById("ls_output_format")' in script
+    assert 'document.getElementById("ls_time_format")' in script
     assert 'params.append("output_format", lsOutputFormat.value)' in script
+    assert 'params.append("force", 1)' in script
+    assert 'params.append("recursive", 1)' in script
+    assert 'params.append("check_sum", 1)' in script
+    assert 'params.append("check_symlink", 1)' in script
+    assert 'params.append("time_format", lsTimeFormat.value)' in script
 
     chmod_script = script.split("async function chmod()", 1)[1]
     chmod_script = chmod_script.split("async function gfptar()", 1)[0]
@@ -601,7 +615,7 @@ def test_debug_page_uses_current_api_paths(monkeypatch):
 
     gfptar_script = script.split("async function gfptar()", 1)[1]
     assert "source: [src]" in gfptar_script
-    assert "options: []" in gfptar_script
+    assert "options: options" in gfptar_script
 
 
 expect_gfls_stdout = "test gfls stdout"
