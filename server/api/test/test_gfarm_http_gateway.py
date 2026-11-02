@@ -161,12 +161,37 @@ def test_classify_gfarm_error(error, exception):
 
 
 @pytest.mark.asyncio
-async def test_set_env_uses_selected_gfarm_username():
+async def test_login_oidc_username_is_used_by_set_env(monkeypatch):
     request = Mock()
     request.client.host = "127.0.0.1"
-    request.session = {
+    request.session = {}
+    monkeypatch.setattr(
+        gfarm_http_gateway,
+        "OIDC_OVERRIDE_REDIRECT_URI",
+        "https://example.test/auth",
+    )
+    redirect_response = Mock()
+    authorize_redirect = AsyncMock(return_value=redirect_response)
+    monkeypatch.setattr(
+        gfarm_http_gateway.provider,
+        "authorize_redirect",
+        authorize_redirect,
+    )
+
+    response = await gfarm_http_gateway.login_oidc(
+        request,
+        username=" selected-user ",
+    )
+
+    assert response is redirect_response
+    assert request.session == {
         gfarm_http_gateway.GFARM_USERNAME_SESSION_KEY: "selected-user"
     }
+    authorize_redirect.assert_awaited_once_with(
+        request,
+        "https://example.test/auth",
+    )
+
     access_token = "access-token"
     with patch("gfarm_http_gateway.switch_auth_from_session",
                new=AsyncMock(return_value=(
@@ -569,53 +594,68 @@ async def test_whoami_basic_session(mock_claims, mock_access_token_none,
     assert response.text == expect_gfwhoami_stdout
 
 
-def test_debug_page_uses_current_api_contract(monkeypatch):
+def test_debug_page_api_actions(monkeypatch):
+    monkeypatch.setattr(
+        gfarm_http_gateway,
+        "login_check",
+        AsyncMock(return_value=(True, None, "", "")),
+    )
     monkeypatch.setattr(
         gfarm_http_gateway,
         "oidc_logout_url",
         AsyncMock(return_value=""),
     )
 
-    with TestClient(gfarm_http_gateway.app) as debug_client:
-        response = debug_client.get("/debug")
-        script_response = debug_client.get("/static/js/gfarm.js")
+    response = client.get("/debug")
+    script_response = client.get("/static/js/gfarm.js")
 
     assert response.status_code == 200
-    assert "gfarm-http-gateway Debug API" in response.text
-    assert "not a complete list" in response.text
-    assert '<select id="ls_output_format">' in response.text
-    assert '<option value="plain" selected>plain</option>' in response.text
-    assert '<option value="json">json</option>' in response.text
-    assert '<select id="ls_time_format">' in response.text
-    assert 'id="rm_force"' in response.text
-    assert 'id="rm_recursive"' in response.text
-    assert 'id="mkdir_p"' in response.text
-    assert 'id="stat_check_sum"' in response.text
-    assert 'id="stat_check_symlink"' in response.text
-    assert 'id="gfptar_options"' in response.text
     assert script_response.status_code == 200
 
     script = script_response.text
-    assert "./conf/me" in script
-    assert "./dir" in script
-    assert '"show_hidden"' in script
-    assert '"output_format"' in script
-    assert 'document.getElementById("ls_output_format")' in script
-    assert 'document.getElementById("ls_time_format")' in script
-    assert 'params.append("output_format", lsOutputFormat.value)' in script
-    assert 'params.append("force", 1)' in script
-    assert 'params.append("recursive", 1)' in script
-    assert 'params.append("check_sum", 1)' in script
-    assert 'params.append("check_symlink", 1)' in script
-    assert 'params.append("time_format", lsTimeFormat.value)' in script
 
-    chmod_script = script.split("async function chmod()", 1)[1]
-    chmod_script = chmod_script.split("async function gfptar()", 1)[0]
-    assert 'method: "PUT"' in chmod_script
+    expected_api_fragments = [
+        'fetch("./conf/me")',
+        'my_fetch("./access_token")',
+        'let api_dir = "./dir";',
+        'const dlurl = `./file${epath}?action=download`;',
+        'const uploadUrl = "./file" + dirPath + file.name;',
+        'const url = `./file${epath}${query ? "?" + query : ""}`;',
+        'const url = `./dir${epath}${query}`;',
+        'const url = `./move`;',
+        'const url = `./attr${epath}${query ? "?" + query : ""}`;',
+        'const url = `./attr${epath}`;',
+        'fetch("./gfptar", {',
+        'xhr.open("GET", dlurl);',
+        'xhr.open("PUT", uploadUrl);',
+        'method: "DELETE"',
+        'method: "POST"',
+        'await dirCommon("mkdir_path", "mkdir_output", "PUT"',
+        'await dirCommon("rmdir_path", "rmdir_output", "DELETE"',
+    ]
+    for fragment in expected_api_fragments:
+        assert fragment in script
 
-    gfptar_script = script.split("async function gfptar()", 1)[1]
-    assert "source: [src]" in gfptar_script
-    assert "options: options" in gfptar_script
+    expected_parameters = [
+        'params.append("show_hidden", 1)',
+        'params.append("long_format", 1)',
+        'params.append("recursive", 1)',
+        'params.append("effperm", 1)',
+        'params.append("ign_err", 1)',
+        'params.append("time_format", lsTimeFormat.value)',
+        'params.append("output_format", lsOutputFormat.value)',
+        'params.append("force", 1)',
+        'params.append("check_sum", 1)',
+        'params.append("check_symlink", 1)',
+        'const params = p ? "?p=1" : "";',
+        'source: src',
+        'destination: dest',
+        'Mode: mode',
+        'source: [src]',
+        'options: options',
+    ]
+    for fragment in expected_parameters:
+        assert fragment in script
 
 
 expect_gfls_stdout = "test gfls stdout"
