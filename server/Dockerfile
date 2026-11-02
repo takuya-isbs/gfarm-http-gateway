@@ -78,7 +78,7 @@ FROM debian:bookworm-slim AS runtime
 ARG DEBIAN_FRONTEND=noninteractive
 
 # ==== Set ARGs for runtime ====
-ARG NODE_VERSION=22.20.0
+ARG NODE_VERSION=26.13.0
 
 # ==== Install runtime dependencies ====
 RUN apt-get update && apt-get install -y --no-install-recommends \

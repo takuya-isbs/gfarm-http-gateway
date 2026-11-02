@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-* Node.js v22 or later
+* Node.js v26 or later
 
 ## Install dependencies
 

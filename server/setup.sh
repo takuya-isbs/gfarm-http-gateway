@@ -67,7 +67,7 @@ install_for_rhel() {
 
 install_frontend() {
     if [ $INSTALL_SYS_PACKAGES -eq 1 ]; then
-        NODE_VERSION=22
+        NODE_VERSION=26
         curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
         \. "$HOME/.nvm/nvm.sh"
         nvm install $NODE_VERSION

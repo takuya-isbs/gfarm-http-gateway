@@ -543,7 +543,7 @@ docker compose up -d
 - Python 3.12 or later
 - venv (python3-venv)
 - GNU Make
-- Node.js v22 or later
+- Node.js v26 or later
 - Redis 7 or later
 
 ### Set up the environment
@@ -924,7 +924,7 @@ You can build and test gfarm-http-gateway inside the **gfarm/docker/dist** devel
    cd ~/gfarm/gfarm-http-gateway/server
    make setup-latest-with-sys-packages
    ```
-   > NOTE: `make setup-latest-with-sys-packages` installs Python 3.12+, Node.js v22 (via nvm), and Redis (server package).
+   > NOTE: `make setup-latest-with-sys-packages` installs Python 3.12+, Node.js v26 (via nvm), and Redis (server package).
 
 5. **Set up the Redis in c2**
 
