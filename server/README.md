@@ -471,25 +471,27 @@ docker compose build
 
 ### Update Gfarm client on gfarm-http-gateway
 
-#### Build with a released version
+Choose the source from which the Gfarm client in the image will be built:
+
+#### Build with Gfarm source from a release archive
 
 ```bash
 docker build \
-  --build-arg GFARM_VER=2.8.8 \
-  -t gfarm-http-gateway:gfarm-2.8.8 .
+  --build-arg GFARM_VER=2.8.11 \
+  -t gfarm-http-gateway:gfarm-2.8.11 .
 ```
 
-#### Build from Git repository
+#### Build with Gfarm source from a Git repository
 
 ```bash
 docker build \
   --build-arg GFARM_SRC_URL='' \
   --build-arg GFARM_SRC_GIT_URL='https://github.com/oss-tsukuba/gfarm.git' \
   --build-arg GFARM_SRC_GIT_BRANCH='2.8' \
-  -t gfarm-http-gateway:gfarm-2.8-src .
+  -t gfarm-http-gateway:gfarm-2.8-git .
 ```
 
-#### Build from a local source tree
+#### Build with Gfarm source from a local tree
 
 ```bash
 docker build \
@@ -507,15 +509,15 @@ services:
     build:
       context: .
       args:
-        # use a released version
-        GFARM_VER: "2.8.8"
+        # Gfarm source from a release archive
+        GFARM_VER: "2.8.11"
 
-        # build from Git repository (leave GFARM_SRC_URL empty)
+        # Gfarm source from a Git repository (leave GFARM_SRC_URL empty)
         # GFARM_SRC_URL: ""
         # GFARM_SRC_GIT_URL: "https://github.com/oss-tsukuba/gfarm.git"
         # GFARM_SRC_GIT_BRANCH: "2.8"
         
-        # build from a local source tree (leave GFARM_SRC_URL and GFARM_SRC_GIT_URL empty)
+        # Gfarm source from a local tree (leave GFARM_SRC_URL and GFARM_SRC_GIT_URL empty)
         # GFARM_SRC_LOCAL: ./vendor/gfarm
         # GFARM_SRC_URL: ""
         # GFARM_SRC_GIT_URL: ""
