@@ -585,8 +585,17 @@ docker compose up -d
 - **OpenID Connect provider**
   - Prepare the following values from your IdP (e.g., Keycloak):
     - Client ID and client secret
-    - Valid redirect URI
-    - Logout redirect URI (optional)
+  - Register the gateway's browser-facing callback URI in the client's **Valid Redirect URIs**. Use the public URL that users enter in their browsers, including the scheme, hostname, port, and any reverse-proxy path prefix. Do not use an internal container hostname unless that is also the browser-facing URL.
+  - With the example public base URL `https://gateway.example.org/gfarm`:
+
+    | Gateway setting | Callback URI to register |
+    |---|---|
+    | `GFARM_HTTP_OIDC_REDIRECT_URI_PAGE=index` (default) | `https://gateway.example.org/gfarm/` |
+    | `GFARM_HTTP_OIDC_REDIRECT_URI_PAGE=auth` | `https://gateway.example.org/gfarm/auth` |
+    | Non-empty `GFARM_HTTP_OIDC_OVERRIDE_REDIRECT_URI` | The exact URI configured in this variable |
+
+  - The post-logout redirect is separate from the login callback. It returns the browser to the gateway's `/logout` endpoint after the identity provider completes logout; the gateway then clears its local session and returns to the login page. For the example base URL, register `https://gateway.example.org/gfarm/logout` in **Valid Post Logout Redirect URIs**. The gateway adds a changing `state` query parameter to this URI, so register the stable URI path without a query string.
+  - In Keycloak, open the target realm, select **Clients**, open the gateway client, and add the login callback to **Valid Redirect URIs** and the post-logout URI to **Valid Post Logout Redirect URIs**. Save the client settings. Use exact host and path entries in production; avoid broad wildcards such as `*`.
 
 ### Prepare Configuration
 
@@ -895,7 +904,14 @@ gfarm-http-gateway provides interactive API documentation via **Swagger UI**, au
 
 ### Development environment in gfarm/docker/dist
 
-You can build and test gfarm-http-gateway inside the **gfarm/docker/dist** developer environment.
+There are two ways to run the gateway in the `gfarm/docker/dist` environment:
+
+| Method | What runs | Use |
+|---|---|---|
+| Docker Compose | A Docker image of the gateway, with Redis and optionally Nginx | Verify the Docker image and HTTP or HTTPS access. See `gfarm/docker/dist/http-gateway/README.md` in the Gfarm checkout. |
+| Development server on c2 | The gateway runs as the `ubuntu` user from this checkout; the development server reloads the application when source files change | Develop and check code changes as they are made. Follow the steps below. |
+
+The c2 development setup uses Redis running on c2 and lets the gateway use the checked-out source directly. It does not run the gateway Docker image.
 
 1. **Set up gfarm/docker/dist**
    Follow `(gfarm source)/docker/dist/README.md` and configure:
@@ -951,7 +967,7 @@ You can build and test gfarm-http-gateway inside the **gfarm/docker/dist** devel
    > user's permissions and configuration.
 
    ```bash
-   GFARM_HTTP_GFARM_CONFIG_FILE=/home/ubuntu/gfarm/gfarm-http-gateway/server/gfarm2.conf-for-gfarm-http-gateway \
+   GFARM_HTTP_GFARM_CONFIG_FILE=/home/ubuntu/gfarm/gfarm-http-gateway/server/gfarm2.conf-for-docker-dist \
      bin/gfarm-http-gateway-dev-for-docker-dist.sh --port 8000
    ```
 
@@ -960,19 +976,20 @@ You can build and test gfarm-http-gateway inside the **gfarm/docker/dist** devel
 
 7. **Configure authentication**
 
-   - Open the Keycloak admin console: `https://keycloak:8443/auth/admin/master/console/#/HPCI/`
-     (login with `admin/admin`).
-   - In the **HPCI** realm, edit the example client `hpci-pub`.
-   - Add redirect URIs:
-       - `http://c2:8000/*`
-       - `http://c2/*`
-   - Add post logout redirect URIs:
-       - `http://c2:8000/*`
-       - `http://c2/*`
-   - Save the changes.
+   1. Open the Keycloak admin console at `https://keycloak:8443/auth/admin/master/console/#/HPCI/` and log in (`admin/admin`).
+   2. Select the **HPCI** realm, open **Clients**, and edit the example client `hpci-pub`.
+   3. In the client's redirect URI settings, add the following entries:
+
+      | Keycloak field | Entries for this docker/dist setup |
+      |---|---|
+      | **Valid Redirect URIs** | `http://c2:8000/*` and `http://c2/*` |
+      | **Valid Post Logout Redirect URIs** | `http://c2:8000/*` and `http://c2/*` |
+
+      The post-logout URI is the gateway's `/logout` endpoint; the gateway adds a changing `state` query parameter during logout. `http://c2:8000/` is the direct gateway URL used below. The `http://c2/` pattern is for access through the docker/dist proxy. These wildcard entries are for this isolated development environment; use specific public URLs in production.
+   4. Save the client settings.
 
 8. **Access the Web UI**
-   
+
    - Open [http://c2:8000/](http://c2:8000/) in a browser.
    - Click the **Login** button, and you will be redirected to [http://keycloak](http://keycloak).
    - Example login: `user1 / PASSWORD`.
