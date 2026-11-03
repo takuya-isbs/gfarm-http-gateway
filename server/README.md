@@ -995,6 +995,54 @@ The c2 development setup uses Redis running on c2 and lets the gateway use the c
    - Example login: `user1 / PASSWORD`.
    - The landing page includes API usage examples.
 
+### Using the Gfarm HTTP client from c1
+
+The command-line client can run in the `gfarm-c1` container and connect to the gateway over `gfarm_net`.
+
+1. **Prepare OAuth authentication in c1**
+
+   Follow [For OAuth authentication in the docker/dist README](../../docker/dist/README.md#for-oauth-authentication). Run `jwt-agent` and `sh edconf.sh oauth2` in c1 as the same user that will run the client. `jwt-agent` stores the access token for that user, and `gfarm-http` reads it from the user's token file.
+
+2. **Build and install the client in c1**
+
+   ```bash
+   cd ~/gfarm/gfarm-http-gateway/client
+   make
+   make PREFIX="$HOME/.local" install
+   export PATH="$HOME/.local/bin:$PATH"
+
+   # Choose one gateway URL
+   # Docker Compose gateway
+   export GFARM_HTTP_URL=http://gfarm-http-gateway-http:8000
+   # Development server on c2
+   # export GFARM_HTTP_URL=http://c2:8000
+
+   gfarm-http whoami
+   gfarm-http ls -la /
+   ```
+
+   This installs the client and its helper scripts under `~/.local/bin` without requiring root privileges. Add the `PATH` setting to your shell startup file if you want to use the installed commands in future sessions. The Compose gateway is reachable at `gfarm-http-gateway-http` from containers on `gfarm_net`. Uncomment the c2 setting and comment out the Compose setting to use the development server instead.
+
+3. **Run without installing (optional)**
+
+   To use the built client directly from the checkout, skip `make ... install` and run it with `./`:
+
+   ```bash
+   cd ~/gfarm/gfarm-http-gateway/client
+   make
+
+   # Choose one gateway URL
+   # Docker Compose gateway
+   export GFARM_HTTP_URL=http://gfarm-http-gateway-http:8000
+   # Development server on c2
+   # export GFARM_HTTP_URL=http://c2:8000
+
+   ./gfarm-http whoami
+   ./gfarm-http ls -la /
+   ```
+
+   Both methods were checked in c1 as `ubuntu`; `whoami` returned `user1` and `ls -la /` listed the Gfarm root directory.
+
 ### Run tests
 
 - `make test-all` - run all available tests (server + client).
