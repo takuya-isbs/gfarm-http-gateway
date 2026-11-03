@@ -9,7 +9,7 @@ This directory provides:
 - **jwt-curl**
   - Wrapper for `curl` with JWT/OIDC support
 
-For the developer workflow that builds and runs this client from c1 in the `gfarm/docker/dist` environment, see [Using the Gfarm HTTP client from c1](../server/README.md#using-the-gfarm-http-client-from-c1).
+For instructions on using this client from c1 in the Gfarm `docker/dist` development and test environment, see the **Use the command-line client from c1** section in `docker/dist/http-gateway/README.md` in the separate Gfarm repository. This path is available when `gfarm-http-gateway` is cloned under the Gfarm source checkout.
 
 ## Prerequisites
 
