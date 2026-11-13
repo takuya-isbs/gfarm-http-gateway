@@ -440,10 +440,14 @@ test_rm() {
 }
 
 clean() {
-    status=$?
+    local status=$?
     trap - EXIT
-    # Clean up test files and directories
-    run_gfarm_http rm -rf "$testdir" > /dev/null || true
+    # Clean up test files and directories. Fall back to gfrm only when the
+    # gfarm-http rm fails, so a broken rm path does not leave test data behind.
+    if ! run_gfarm_http rm -rf "$testdir" > /dev/null; then
+        echo "WARNING: gfarm-http rm failed; falling back to gfrm -r $testdir" >&2
+        gfrm -r "$testdir" || echo "WARNING: could not remove $testdir" >&2
+    fi
     if [ "$status" -ne 0 ]; then
         echo "Test suite failed; removed $testdir"
     else
