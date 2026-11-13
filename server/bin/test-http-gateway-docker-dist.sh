@@ -63,6 +63,8 @@ playwright_passphrase_file="/run/gfarm-test-secrets/jwt-passphrase"
 host_download=$(mktemp)
 host_secret_dir=$(mktemp -d)
 host_passphrase_file="${host_secret_dir}/jwt-passphrase"
+host_react_app_copy_root=$(mktemp -d)
+host_react_app_copy="${host_react_app_copy_root}/react-app"
 touch "${host_passphrase_file}"
 chmod 0600 "${host_passphrase_file}"
 
@@ -83,6 +85,7 @@ cleanup() {
         rm -rf "${container_workdir}" >/dev/null 2>&1 || true
     rm -f "${host_download}"
     rm -rf "${host_secret_dir}"
+    rm -rf "${host_react_app_copy_root}"
 }
 trap cleanup EXIT
 
@@ -101,7 +104,7 @@ prepare_gfarm_http() {
     # here so it cannot pick up a stale ignored binary from the container.
     build_cmd="cd '${container_source_dir}' &&"
     build_cmd+=" go build -o '${container_gfarm_http}' ./cmd/gfarm-http"
-    docker exec "${docker_dist_client}" \
+    docker exec --user "${docker_dist_user}" "${docker_dist_client}" \
         sh -c "${build_cmd}"
 }
 
@@ -114,6 +117,27 @@ prepare_playwright_image() {
     fi
 }
 
+# Copies the react-app sources (without any checkout node_modules) to a host
+# temporary directory and installs their dependencies there with npm ci inside
+# the Playwright image, which provides node and npm. Each Playwright run mounts
+# this copy read-only at the react-app path. The client container has no
+# Node.js, so the install does not run there.
+prepare_react_app_copy() {
+    echo "[PREP] Installing react-app dependencies with npm ci" \
+        "in the Playwright image..."
+    mkdir -p "${host_react_app_copy}"
+    tar -C "${react_app_dir}" --exclude=./node_modules -cf - . |
+        tar -C "${host_react_app_copy}" -xf -
+    docker run --rm --init \
+        --user "$(id -u):$(id -g)" \
+        --env HOME=/tmp \
+        --env npm_config_cache=/tmp/npm-cache \
+        --volume "${host_react_app_copy}:/app" \
+        --workdir /app \
+        "${test_image}" \
+        npm ci --no-audit --no-fund
+}
+
 # Gets a fresh JWT passphrase from the JWT Server login page. Playwright is
 # only the tool that drives the login page here; the passphrase is written
 # to a file for the CLI.
@@ -122,7 +146,7 @@ prepare_jwt_passphrase() {
         "login page (Playwright helper)..."
     docker run --rm --init --ipc=host \
         --network "${docker_dist_network}" \
-        --volume "${gateway_root}:/workspace:ro" \
+        --volume "${host_react_app_copy}:/workspace/server/frontend/app/react-app:ro" \
         --volume "${host_secret_dir}:/run/gfarm-test-secrets:rw" \
         --workdir /workspace/server/frontend/app/react-app \
         --env "GFARM_HTTP_TEST_USERNAME=${test_username}" \
@@ -184,7 +208,7 @@ test_webui_login_and_upload() {
         "and uploading a file (Playwright)..."
     docker run --rm --init --ipc=host \
         --network "${docker_dist_network}" \
-        --volume "${gateway_root}:/workspace:ro" \
+        --volume "${host_react_app_copy}:/workspace/server/frontend/app/react-app:ro" \
         --workdir /workspace/server/frontend/app/react-app \
         --env "GFARM_HTTP_GATEWAY_URL=${gateway_url}" \
         --env "GFARM_HTTP_TEST_USERNAME=${test_username}" \
@@ -227,7 +251,7 @@ test_webui_operations() {
     echo "  - Running real-Gfarm Web UI operation cases (Playwright)..."
     docker run --rm --init --ipc=host \
         --network "${docker_dist_network}" \
-        --volume "${gateway_root}:/workspace:ro" \
+        --volume "${host_react_app_copy}:/workspace/server/frontend/app/react-app:ro" \
         --workdir /workspace/server/frontend/app/react-app \
         --env "GFARM_HTTP_GATEWAY_URL=${gateway_url}" \
         --env "GFARM_HTTP_TEST_USERNAME=${test_username}" \
@@ -291,6 +315,7 @@ main() {
 
     prepare_gfarm_http
     prepare_playwright_image
+    prepare_react_app_copy
     prepare_jwt_passphrase
     prepare_cli_credential
     prepare_test_root
