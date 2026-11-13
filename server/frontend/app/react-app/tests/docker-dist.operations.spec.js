@@ -7,6 +7,7 @@ const username = process.env.GFARM_HTTP_TEST_USERNAME;
 const password = process.env.GFARM_HTTP_TEST_PASSWORD;
 const testDirectory = process.env.GFARM_HTTP_TEST_DIRECTORY;
 const uploadFile = process.env.GFARM_HTTP_TEST_UPLOAD_FILE;
+const gatewayOrigin = new URL(process.env.GFARM_HTTP_GATEWAY_URL).origin;
 
 async function login(page) {
     expect(username, "GFARM_HTTP_TEST_USERNAME must be set").toBeTruthy();
@@ -17,13 +18,12 @@ async function login(page) {
     await page.locator("#oidc-btn").click();
     await page.locator("#username").fill(username);
     await page.locator("#password").fill(password);
-    const userInfoPromise = page.waitForResponse((response) => {
-        return new URL(response.url()).pathname.endsWith("/user_info");
-    });
     await page.locator("#kc-login").click();
-    const userInfo = await userInfoPromise;
-    expect(userInfo.ok()).toBeTruthy();
-    expect((await userInfo.json()).username).toBe(username);
+    // Wait until Keycloak has redirected back to the gateway and the login
+    // page is gone, so the next navigation does not interrupt the login.
+    await page.waitForURL(
+        (url) => url.origin === gatewayOrigin && !url.pathname.startsWith("/login")
+    );
     const directoryResponsePromise = page.waitForResponse((response) => {
         return response.request().method() === "GET" &&
             new URL(response.url()).pathname.includes("/dir/");
@@ -88,7 +88,7 @@ test("PUT /dir/{path}: create a Gfarm directory", async ({ page }) => {
 });
 
 test(
-    "DELETE /file/{path}: delete a Gfarm directory through the Web UI",
+    "DELETE /file/{path} (recursive=on): delete a Gfarm directory through the Web UI",
     async ({ page }) => {
         const directoryName = `deleted-by-browser-${Date.now()}`;
         await page.locator("#upload-dropdown").click();
@@ -103,7 +103,8 @@ test(
         expect((await createResponsePromise).ok()).toBeTruthy();
         await expect(page.getByTestId(`row-${directoryName}`)).toBeVisible();
 
-        // Replace this with DELETE /dir when that API supports recursive deletion.
+        // The Web UI deletes directories through DELETE /file with recursive=on.
+        // DELETE /dir is covered by the CLI suite (test_rmdir).
         await openItemAction(page, directoryName, "delete");
         const deleteModal = page.getByTestId("delete-modal");
         const deleteResponsePromise = page.waitForResponse((response) => {

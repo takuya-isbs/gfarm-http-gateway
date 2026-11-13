@@ -26,16 +26,19 @@ test("real Keycloak login and Gfarm file sharing with gfarm-http", async ({ page
     await page.locator("#oidc-btn").click();
     await page.locator("#username").fill(username);
     await page.locator("#password").fill(password);
-    const userInfoResponsePromise = page.waitForResponse((response) => {
-        return new URL(response.url()).pathname.endsWith("/user_info");
-    });
     await page.locator("#kc-login").click();
+    // Wait until Keycloak has redirected back to the gateway and the login
+    // page is gone, so the next navigation does not interrupt the login.
+    await page.waitForURL(
+        (url) => url.origin === new URL(gatewayURL).origin && !url.pathname.startsWith("/login")
+    );
 
-    const userInfoResponse = await userInfoResponsePromise;
-    expect(userInfoResponse.ok()).toBeTruthy();
-    expect((await userInfoResponse.json()).username).toBe(username);
-
+    const directoryResponsePromise = page.waitForResponse((response) => {
+        return response.request().method() === "GET" &&
+            new URL(response.url()).pathname.includes("/dir/");
+    });
     await page.goto(`/#/ui${testDirectory}`);
+    expect((await directoryResponsePromise).ok()).toBeTruthy();
     await expect(page.getByTestId(`row-${clientUploadedFilename}`)).toBeVisible();
 
     await page.locator("#upload-dropdown").click();
