@@ -57,7 +57,8 @@ container_workdir="/tmp/gfarm-http-gateway-test-client-${random_suffix}"
 container_source_dir="${container_workdir}/client"
 container_source="${container_workdir}/${cli_uploaded_file}"
 container_download="${container_workdir}/${web_uploaded_file}"
-container_gfarm_http="${container_workdir}/gfarm-http"
+container_gfarm_http="${container_source_dir}/gfarm-http"
+gfarm_test_directory="${gfarm_test_root}/webui"
 playwright_passphrase_file="/run/gfarm-test-secrets/jwt-passphrase"
 host_download=$(mktemp)
 host_secret_dir=$(mktemp -d)
@@ -78,7 +79,7 @@ client() {
 
 cleanup() {
     client rm -r -f "${gfarm_test_root}" >/dev/null 2>&1 || true
-    docker exec --user "${docker_dist_user}" "${docker_dist_client}" \
+    docker exec "${docker_dist_client}" \
         rm -rf "${container_workdir}" >/dev/null 2>&1 || true
     rm -f "${host_download}"
     rm -rf "${host_secret_dir}"
@@ -96,9 +97,11 @@ prepare_gfarm_http() {
         mkdir -p "${container_workdir}"
     docker cp "${gateway_root}/client" \
         "${docker_dist_client}:${container_workdir}"
+    # The client test script resolves ../gfarm-http from client/test; build
+    # here so it cannot pick up a stale ignored binary from the container.
     build_cmd="cd '${container_source_dir}' &&"
     build_cmd+=" go build -o '${container_gfarm_http}' ./cmd/gfarm-http"
-    docker exec --user "${docker_dist_user}" "${docker_dist_client}" \
+    docker exec "${docker_dist_client}" \
         sh -c "${build_cmd}"
 }
 
@@ -155,38 +158,15 @@ prepare_test_root() {
 
 # ---- Tests: each one depends only on the preparation, not on other tests --
 
-# [CLI] gfarm-http authenticates as the test user with the prepared credential.
-test_cli_gfarm_http_whoami() {
-    echo "  - Checking gfarm-http whoami for ${test_username}..."
-    if ! actual_username=$(client whoami); then
-        cat >&2 <<EOF
-The gfarm-http client could not authenticate through the Docker Compose Gateway.
-Check the JWT Server login and the jwt-agent output for ${docker_dist_user} in
-${docker_dist_client}.
-EOF
-        exit 1
-    fi
-    if [[ "${actual_username}" != "${test_username}" ]]; then
-        echo "Expected Gfarm user '${test_username}'," \
-            "got '${actual_username}'." >&2
-        exit 1
-    fi
-}
-
-# [CLI] gfarm-http uploads a file and downloads it again; the content matches
-# the fixture.
-test_cli_upload_and_download() {
-    local gfarm_dir="${gfarm_test_root}/${FUNCNAME[0]}"
-
-    echo "  - Uploading a file with gfarm-http to ${gfarm_dir}..."
-    docker cp "${host_fixture}" "${docker_dist_client}:${container_source}"
-    client mkdir "${gfarm_dir}"
-    client upload "${container_source}" "${gfarm_dir}/${cli_uploaded_file}"
-
-    echo "  - Downloading with gfarm-http and comparing with the fixture..."
-    client download "${gfarm_dir}/${cli_uploaded_file}" "${container_download}"
-    docker cp "${docker_dist_client}:${container_download}" "${host_download}"
-    cmp "${host_fixture}" "${host_download}"
+# [CLI] Run the client's own real-Gfarm suite. It reports each operation
+# separately and cleans up its unique test directory.
+test_cli_operations() {
+    echo "  - Running client/test/gfarm-http-test.sh in ${docker_dist_client}..."
+    docker exec \
+        --user "${docker_dist_user}" \
+        --env "GFARM_HTTP_URL=${gateway_url}" \
+        "${docker_dist_client}" \
+        sh -c "cd '${container_source_dir}' && ./test/gfarm-http-test.sh /tmp"
 }
 
 # [Web UI] Keycloak login, a file uploaded by the CLI is listed, and a Web UI
@@ -223,6 +203,41 @@ test_webui_login_and_upload() {
     client download "${gfarm_dir}/${web_uploaded_file}" "${container_download}"
     docker cp "${docker_dist_client}:${container_download}" "${host_download}"
     cmp "${host_fixture}" "${host_download}"
+}
+
+# [Web UI] Exercise the main file operations against real Gfarm through the
+# browser. Fixtures are created by gfarm-http and removed with gfarm_test_root.
+test_webui_operations() {
+    local seed_names=(
+        download-source.txt copy-source.txt move-source.txt rename-source.txt
+        delete-source.txt detail-source.txt permission-source.txt acl-source.txt
+        archive-one.txt archive-two.txt
+    )
+    local name
+
+    echo "  - Seeding ${gfarm_test_directory} with gfarm-http..."
+    docker cp "${host_fixture}" "${docker_dist_client}:${container_source}"
+    client mkdir -p "${gfarm_test_directory}/symlink-target"
+    for name in "${seed_names[@]}"; do
+        client upload "${container_source}" "${gfarm_test_directory}/${name}"
+    done
+    client upload "${container_source}" \
+        "${gfarm_test_directory}/symlink-target/target-file.txt"
+
+    echo "  - Running real-Gfarm Web UI operation cases (Playwright)..."
+    docker run --rm --init --ipc=host \
+        --network "${docker_dist_network}" \
+        --volume "${gateway_root}:/workspace:ro" \
+        --workdir /workspace/server/frontend/app/react-app \
+        --env "GFARM_HTTP_GATEWAY_URL=${gateway_url}" \
+        --env "GFARM_HTTP_TEST_USERNAME=${test_username}" \
+        --env GFARM_HTTP_TEST_PASSWORD \
+        --env "GFARM_HTTP_TEST_DIRECTORY=${gfarm_test_directory}" \
+        --env "GFARM_HTTP_TEST_UPLOAD_FILE=${playwright_fixture}" \
+        "${test_image}" \
+        ./node_modules/.bin/playwright test \
+            --config=playwright.docker-dist.operations.config.js \
+            --output=/tmp/gfarm-http-gateway-operations-results
 }
 
 # Runs one test in a subshell so that its failure is recorded instead of
@@ -263,14 +278,14 @@ print_summary() {
 main() {
     local total=3
     local names=(
-        "[CLI] gfarm-http whoami as the test user"
-        "[CLI] gfarm-http upload and download round trip"
+        "[CLI] gfarm-http operation suite"
         "[Web UI] login, CLI file, and Web UI upload checked by CLI download"
+        "[Web UI] Gfarm file operations"
     )
     local fns=(
-        test_cli_gfarm_http_whoami
-        test_cli_upload_and_download
+        test_cli_operations
         test_webui_login_and_upload
+        test_webui_operations
     )
     local i
 

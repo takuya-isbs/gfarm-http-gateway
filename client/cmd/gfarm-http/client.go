@@ -69,6 +69,9 @@ func (c *Client) logRequest(req *http.Request) {
 	c.vlogf("=> %s %s\n", req.Method, req.URL.String())
 	for k, vs := range req.Header {
 		for _, v := range vs {
+			if strings.EqualFold(k, "Authorization") {
+				v = "[redacted]"
+			}
 			c.vlogf("   %s: %s\n", k, v)
 		}
 	}
@@ -202,7 +205,7 @@ func (c *Client) cmdChmod(mode, gfarmPath string) error {
 	}
 	u := c.generateURL("attr", gfarmPath, nil)
 	data := map[string]string{"Mode": mode}
-	return c.makeHTTPRequest("POST", u, data, nil, "", "")
+	return c.makeHTTPRequest("PUT", u, data, nil, "", "")
 }
 
 func (c *Client) cmdStat(gfarmPath string, check_sum, check_symlink bool) error {
@@ -240,7 +243,7 @@ func (c *Client) cmdCopy(srcPath, dstPath string) error {
 	}
 	u := c.generateURL("copy", "", nil)
 	data := map[string]string{"source": srcPath, "destination": dstPath}
-	return c.makeHTTPRequest("POST", u, data, nil, "", "")
+	return c.makeHTTPRequest("PUT", u, data, nil, "", "")
 }
 
 func (c *Client) cmdLn(srcPath, dstPath string, symlink bool) error {
@@ -287,7 +290,7 @@ func (c *Client) cmdSetfacl(gfarmPath, aclText string) error {
 		return fmt.Errorf("parse ACL: %w", err)
 	}
 
-	return c.makeHTTPRequest("POST", u, data, nil, "", "")
+	return c.makeHTTPRequest("PUT", u, data, nil, "", "")
 }
 
 func parseAclText(text string) (map[string]any, error) {

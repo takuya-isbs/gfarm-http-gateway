@@ -89,8 +89,35 @@ if [ $opt_verbose -eq 1 ]; then
     opts+=("-v")
 fi
 
+test_api_route() {
+    case "$1" in
+        test_whoami) echo "GET /conf/me" ;;
+        test_mkdir) echo "PUT /dir/{path}" ;;
+        test_rmdir) echo "DELETE /dir/{path}" ;;
+        test_ls|test_ls_a|test_ls_e|test_ls_l|test_ls_R|test_ls_j)
+            echo "GET /dir/{path}"
+            ;;
+        test_upload_download) echo "PUT/GET /file/{path}" ;;
+        test_zip_download) echo "POST /zip" ;;
+        test_chmod_stat) echo "GET/PUT /attr/{path}" ;;
+        test_getfacl_setfacl) echo "GET/PUT /acl/{path}" ;;
+        test_mv) echo "POST /move" ;;
+        test_copy) echo "PUT /copy" ;;
+        test_ln) echo "POST /symlink, GET /attr/{path}" ;;
+        test_userinfo) echo "GET /user_info" ;;
+        test_tar_create_and_extract) echo "POST /gfptar" ;;
+        test_rm) echo "DELETE /file/{path}" ;;
+        test_gfuser) echo "GET /users" ;;
+        test_gfgroup) echo "GET /groups" ;;
+        *) return 1 ;;
+    esac
+}
+
 testname() {
-    echo -n "${FUNCNAME[1]} ... "
+    local test_case=${FUNCNAME[1]}
+    local api_route
+    api_route=$(test_api_route "$test_case")
+    echo -n "${test_case} [${api_route}] ... "
 }
 
 PASS() {
@@ -250,21 +277,48 @@ test_chmod_stat() {
         # For plain text output, try to find Mode line
         mode2=$(echo "$stat_output" | grep -i "^Mode:" | awk '{print $2}' || echo "")
     fi
-    
-    if [ -n "$mode2" ] && [ "$mode1" = "$mode2" ]; then
-        # Test directory chmod as well
-        mode3="1700"
-        run_gfarm_http chmod "$mode3" "$testdir" > /dev/null
-        
-        stat_output=$(run_gfarm_http stat "$testdir")
-        mode4=$(echo "$stat_output" | jq -r '.Mode // empty' 2>/dev/null || echo "")
-        
-        if [ -z "$mode4" ]; then
-            mode4=$(echo "$stat_output" | grep -i "^Mode:" | awk '{print $2}' || echo "")
-        fi
-        
-        [ -n "$mode4" ] && [ "$mode3" = "$mode4" ]
+
+    if [ -z "$mode2" ] || [ "$mode1" != "$mode2" ]; then
+        echo "Expected file mode $mode1, got ${mode2:-empty}" >&2
+        return 1
     fi
+
+    # Test directory chmod as well
+    mode3="1700"
+    run_gfarm_http chmod "$mode3" "$testdir" > /dev/null
+
+    stat_output=$(run_gfarm_http stat "$testdir")
+    mode4=$(echo "$stat_output" | jq -r '.Mode // empty' 2>/dev/null || echo "")
+
+    if [ -z "$mode4" ]; then
+        mode4=$(echo "$stat_output" | grep -i "^Mode:" | awk '{print $2}' || echo "")
+    fi
+
+    if [ -z "$mode4" ] || [ "$mode3" != "$mode4" ]; then
+        echo "Expected directory mode $mode3, got ${mode4:-empty}" >&2
+        return 1
+    fi
+    PASS
+}
+
+test_getfacl_setfacl() {
+    set -eu
+    testname
+    acl_file=$(mktemp)
+    acl_output=$(mktemp)
+    cleanup_acl_files() {
+        rm -f "$acl_file" "$acl_output"
+    }
+    trap cleanup_acl_files EXIT
+    printf 'user:gfarmadm:r--\n' > "$acl_file"
+
+    run_gfarm_http setfacl -M "$acl_file" "$testfile" > /dev/null
+    run_gfarm_http getfacl "$testfile" > "$acl_output"
+    jq -e '.acl[] | select(.acl_type == "user" and .acl_name == "gfarmadm" and .acl_perms.r == true)' \
+        "$acl_output" > /dev/null
+
+    cleanup_acl_files
+    trap - EXIT
     PASS
 }
 
@@ -386,13 +440,16 @@ test_rm() {
 }
 
 clean() {
-    if [ $? -ne 0 ]; then
-        echo "NG"
-    fi
+    status=$?
+    trap - EXIT
     # Clean up test files and directories
     run_gfarm_http rm -rf "$testdir" > /dev/null || true
-    gfrm -r "$testdir" || true
-    echo "Remove $testdir"
+    if [ "$status" -ne 0 ]; then
+        echo "Test suite failed; removed $testdir"
+    else
+        echo "Remove $testdir"
+    fi
+    return "$status"
 }
 
 
@@ -400,30 +457,56 @@ echo "Starting gfarm-http client tests..."
 echo "Test directory: $testdir"
 echo ""
 
-# Run all tests
-test_whoami
-test_mkdir
-
-# trap clean EXIT after test_mkdir to avoid deleting an existing dir
+# testdir is unique, so cleanup is safe even if creation or a test fails.
 trap clean EXIT
-test_ls
-test_ls_a
-test_ls_e
-test_ls_l
-test_ls_R
-test_ls_j
-test_upload_download
-test_zip_download
-test_chmod_stat
-test_mv
-test_copy
-test_ln
-test_userinfo
-test_tar_create_and_extract
-test_rm
-test_rmdir
-test_gfuser
-test_gfgroup
 
-echo ""
-echo "All tests passed!"
+test_cases=(
+    test_whoami
+    test_mkdir
+    test_ls
+    test_ls_a
+    test_ls_e
+    test_ls_l
+    test_ls_R
+    test_ls_j
+    test_upload_download
+    test_zip_download
+    test_chmod_stat
+    test_getfacl_setfacl
+    test_mv
+    test_copy
+    test_ln
+    test_userinfo
+    test_tar_create_and_extract
+    test_rm
+    test_rmdir
+    test_gfuser
+    test_gfgroup
+)
+results=()
+failed_count=0
+total=${#test_cases[@]}
+
+for index in "${!test_cases[@]}"; do
+    test_case=${test_cases[$index]}
+    api_route=$(test_api_route "$test_case")
+    set +e
+    ( set -e; "$test_case" )
+    status=$?
+    set -e
+
+    if [ "$status" -eq 0 ]; then
+        results+=("PASS  $((index + 1))/$total  $api_route  $test_case")
+    else
+        echo "FAIL (exit status $status)"
+        results+=("FAIL  $((index + 1))/$total  $api_route  $test_case")
+        failed_count=$((failed_count + 1))
+    fi
+done
+
+echo
+echo "==== gfarm-http client test summary ===="
+printf '  %s\n' "${results[@]}"
+passed_count=$((total - failed_count))
+echo "Result: $passed_count passed, $failed_count failed"
+[ "$failed_count" -eq 0 ]
