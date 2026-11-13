@@ -122,6 +122,7 @@ func prepareRequestBody(data any, uploadFile string, headers map[string]string) 
 }
 
 func prepareUploadBody(uploadFile string, headers map[string]string) (io.Reader, func(), error) {
+	headers["Content-Type"] = "application/octet-stream"
 	if uploadFile == "-" {
 		return os.Stdin, func() {}, nil
 	}

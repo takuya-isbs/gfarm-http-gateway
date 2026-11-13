@@ -15,7 +15,7 @@ INSTALL_PROGRAM  ?= $(INSTALL) -m 0755
 
 TAG := $(shell git describe --tags --match 'client/*' --dirty --always 2>/dev/null || git rev-parse --short HEAD)
 
-.PHONY: all build clean install uninstall test
+.PHONY: all build clean install uninstall test test-contract
 
 all: build
 
@@ -38,3 +38,7 @@ clean:
 
 test: build
 	$(TEST_SCRIPT) /tmp
+
+test-contract:
+	spec="$$($(CURDIR)/../server/venv/bin/python $(CURDIR)/../server/bin/fetch-openapi-json.py)" && \
+	GFARM_HTTP_OPENAPI_JSON="$$spec" go test -v -cover ./...

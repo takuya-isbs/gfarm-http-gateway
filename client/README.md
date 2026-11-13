@@ -186,6 +186,12 @@ Run the tests:
 make test
 ```
 
+### OpenAPI contract tests
+
+From this directory, run `make test-contract` to fetch the server's `/openapi.json` through its test client and compare it with requests sent by each Go CLI operation. The output names each client function and reports whether its request matches OpenAPI. It requires the sibling `server/venv` created by `make -C ../server setup-latest` and runs the Go tests with coverage.
+
+The helper sets a fixed Fernet-valid key only to import the app for schema retrieval. It is not a Gateway deployment key.
+
 ## jwt-curl
 
 Wrapper around `curl` that automatically attaches an access token from `jwt-agent`.

@@ -25,6 +25,11 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ./client/go.mod
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -41,6 +46,10 @@ jobs:
       - name: Run setup-latest
         working-directory: server
         run: make setup-latest
+
+      - name: Run Go client OpenAPI contract tests
+        working-directory: client
+        run: make test-contract
 
       - name: Install Playwright browsers
         working-directory: server

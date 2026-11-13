@@ -395,11 +395,11 @@ Edit the following two files:
 `gfarm-http-gateway-for-HPCI.conf` (main)  
 `gfarm-http-gateway-for-HPCI-sub.conf` (alternative)
 
-- **`GFARM_HTTP_SESSION_SECRET`** - set a strong, random secret.
+- **`GFARM_HTTP_SESSION_SECRET`** - set a strong, random secret. The decoded value must be 32 bytes for Fernet.
 
-  Generate a random value (~64 Base64 chars):
+  Generate a random value (44 Base64 chars):
   ```bash
-  python3 -c "import secrets,base64; print(base64.urlsafe_b64encode(secrets.token_bytes(48)).decode())"
+  openssl rand -base64 32
   ```
 
   Then set it in the config (single line, quoted):

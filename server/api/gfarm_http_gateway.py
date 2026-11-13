@@ -3281,7 +3281,19 @@ async def zip_export(request: Request,
         headers=headers)
 
 
-@app.put("/file/{gfarm_path:path}")
+@app.put(
+    "/file/{gfarm_path:path}",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/octet-stream": {
+                    "schema": {"type": "string", "format": "binary"}
+                }
+            },
+        }
+    },
+)
 async def file_import(gfarm_path: str,
                       request: Request,
                       x_file_timestamp:

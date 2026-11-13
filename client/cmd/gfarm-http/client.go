@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -121,15 +122,15 @@ func (c *Client) cmdLs(gfarmPath string, all, effective, longf, timef, recursive
 	}
 	params := url.Values{}
 	if all {
-		params.Set("show_hidden", "on")
+		params.Set("show_hidden", strconv.FormatBool(true))
 	}
 	if effective {
-		params.Set("effperm", "on")
+		params.Set("effperm", strconv.FormatBool(true))
 	}
 	if longf {
-		params.Set("long_format", "on")
+		params.Set("long_format", strconv.FormatBool(true))
 	} else {
-		params.Set("long_format", "off")
+		params.Set("long_format", strconv.FormatBool(false))
 	}
 	if timef {
 		params.Set("time_format", "full")
@@ -137,7 +138,7 @@ func (c *Client) cmdLs(gfarmPath string, all, effective, longf, timef, recursive
 		params.Set("time_format", "short")
 	}
 	if recursive {
-		params.Set("recursive", "on")
+		params.Set("recursive", strconv.FormatBool(true))
 	}
 	if json {
 		params.Set("output_format", "json")
@@ -170,7 +171,7 @@ func (c *Client) cmdMkdir(gfarmPath string, parents bool) error {
 	}
 	params := url.Values{}
 	if parents {
-		params.Set("p", "on")
+		params.Set("p", strconv.FormatBool(true))
 	}
 	u := c.generateURL("dir", gfarmPath, params)
 	return c.makeHTTPRequest("PUT", u, nil, nil, "", "")
@@ -182,10 +183,10 @@ func (c *Client) cmdRm(gfarmPath string, force, recursive bool) error {
 	}
 	params := url.Values{}
 	if force {
-		params.Set("force", "on")
+		params.Set("force", strconv.FormatBool(true))
 	}
 	if recursive {
-		params.Set("recursive", "on")
+		params.Set("recursive", strconv.FormatBool(true))
 	}
 	u := c.generateURL("file", gfarmPath, params)
 	return c.makeHTTPRequest("DELETE", u, nil, nil, "", "")
@@ -214,10 +215,10 @@ func (c *Client) cmdStat(gfarmPath string, check_sum, check_symlink bool) error 
 	}
 	params := url.Values{}
 	if check_sum {
-		params.Set("check_sum", "on")
+		params.Set("check_sum", strconv.FormatBool(true))
 	}
 	if check_symlink {
-		params.Set("check_symlink", "on")
+		params.Set("check_symlink", strconv.FormatBool(true))
 	}
 	u := c.generateURL("attr", gfarmPath, params)
 	return c.makeHTTPRequest("GET", u, nil, nil, "", "")
@@ -251,9 +252,7 @@ func (c *Client) cmdLn(srcPath, dstPath string, symlink bool) error {
 		return fmt.Errorf("both source and destination paths are required")
 	}
 	params := url.Values{}
-	if symlink {
-		params.Set("symlink", "on")
-	}
+	params.Set("symlink", strconv.FormatBool(symlink))
 	u := c.generateURL("symlink", "", params)
 	data := map[string]string{"source": srcPath, "destination": dstPath}
 	return c.makeHTTPRequest("POST", u, data, nil, "", "")
@@ -366,7 +365,7 @@ func parsePermBools(s string) (bool, bool, bool, error) {
 func (c *Client) cmdUsers(long_format bool) error {
 	params := url.Values{}
 	if long_format {
-		params.Set("long_format", "on")
+		params.Set("long_format", strconv.FormatBool(true))
 	}
 	u := c.generateURL("users", "", params)
 	return c.makeHTTPRequest("GET", u, nil, nil, "", "")
@@ -375,7 +374,7 @@ func (c *Client) cmdUsers(long_format bool) error {
 func (c *Client) cmdGroups(long_format bool) error {
 	params := url.Values{}
 	if long_format {
-		params.Set("long_format", "on")
+		params.Set("long_format", strconv.FormatBool(true))
 	}
 	u := c.generateURL("groups", "", params)
 	return c.makeHTTPRequest("GET", u, nil, nil, "", "")
