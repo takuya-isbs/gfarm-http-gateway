@@ -908,6 +908,14 @@ For development and testing in the Gfarm `docker/dist` environment, see `docker/
 
 ### Run tests
 
+These tests do not access a real Gfarm service, so they can run outside the `docker/dist` environment.
+
+Set up the environment in `server/` before running them:
+
+- `make setup-latest` - create the Python virtual environment (`venv`).
+- `make setup-playwright` - install Chromium for the Playwright tests.
+- Node.js (`npm`) is required for the Playwright tests.
+
 - `make test-all` - run all available tests (server + client).
   -  Requires the client to be built first (`cd ../client && make`).
 - `make test` - run the following tests:
@@ -916,7 +924,7 @@ For development and testing in the Gfarm `docker/dist` environment, see `docker/
   - `make test-flake8` - run style checks with flake8.
   - `make test-playwright` - run Web UI end-to-end tests with Playwright (must be installed).
 
-### View the Playwright HTML report
+#### View the Playwright HTML report
 
 After running the tests, start the report server from the `server` directory:
 
@@ -929,6 +937,17 @@ npx --prefix frontend/app/react-app playwright show-report \
 
 When c2 is accessible through Squid, open <http://c2:9323/> in a browser. Stop
 the temporary report server with `Ctrl+C` after viewing the report.
+
+### Integration test with docker/dist
+
+The integration test `bin/test-http-gateway-docker-dist.sh` is not part of `make test` above. It needs the Gfarm services of `docker/dist` (for example, on c1 or c2 in that environment), and it is started from the Gfarm repository on the Docker host:
+
+```
+cd <Gfarm source checkout>/docker/dist/http-gateway
+GFARM_HTTP_TEST_PASSWORD=... make test
+```
+
+See `docker/dist/http-gateway/README.md` in the Gfarm repository for the prerequisites and variables.
 
 ### To pin Python package versions
 

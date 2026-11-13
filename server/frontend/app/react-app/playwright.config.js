@@ -14,6 +14,8 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
     testDir: "./tests",
+    /* docker/dist integration specs need the docker/dist runner's environment. */
+    testIgnore: "docker-dist.*",
     /* Run tests in files in parallel */
     fullyParallel: true,
     /* Fail the build on CI if you accidentally left test.only in the source code. */

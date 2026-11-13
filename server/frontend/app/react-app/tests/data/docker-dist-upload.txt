@@ -1,0 +1,1 @@
+Test data for verifying file uploads and downloads between the Gfarm Web UI and gfarm-http.
