@@ -49,10 +49,12 @@ Prerequisites:
 
 - Node.js and project setup:
   - If Node.js 26 is already installed, activate it (for example, `nvm use 26`) and run `make -C server setup-latest`. This target uses `INSTALL_SYS_PACKAGES=0`; it creates the Python environment and runs `npm ci` plus the frontend build, but does not install Node.js.
-  - If Node.js 26 and system packages are needed, run `make -C server setup-latest-with-sys-packages`. This sets `INSTALL_SYS_PACKAGES=1`, installs Node.js 26 through nvm, and then performs the Python and frontend setup.
+  - If Node.js 26 and system packages are needed, run `make -C server setup-latest-with-sys-packages`. This sets `INSTALL_SYS_PACKAGES=1`, installs Node.js 26 through nvm, and performs the Python and frontend setup. Activate Node.js 26 in your shell with `nvm use 26` before running `make ci`.
 - Install Playwright Chromium with `make -C server setup-playwright`.
 
-GitHub Actions can use `make test-unit-all` as its Gfarm-independent test and coverage entry point after installing these prerequisites.
+GitHub Actions runs `make ci` after installing these prerequisites. Run the same checks locally with `make ci`; Playwright uses CI mode with one worker in both environments. Direct `make test-unit-all` calls preserve the caller's CI setting.
+
+Run only the local lint checks with `make lint`: Go formatting and `go vet`, Python `flake8`, and React source ESLint.
 
 ### Run one test while developing
 
@@ -77,3 +79,4 @@ The docker/dist stack must already be prepared. This test creates and removes te
 - Complete Go test suite with OpenAPI request checks: `make -C client test-contract`.
 - Go client statement coverage: `make -C client test-coverage`.
 - CLI and Web UI API coverage: `make test-api-coverage` from the repository root.
+- Go, Python, and React source lint: `make lint` from the repository root.

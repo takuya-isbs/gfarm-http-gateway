@@ -115,4 +115,3 @@ func TestUnitLogRequestRedactsAuthorization(t *testing.T) {
 		t.Fatal("request log did not mark the authorization value as redacted")
 	}
 }
-

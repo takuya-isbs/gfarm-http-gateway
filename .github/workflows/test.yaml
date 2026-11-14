@@ -47,17 +47,13 @@ jobs:
         working-directory: server
         run: make setup-latest
 
-      - name: Run Go client OpenAPI contract tests
-        working-directory: client
-        run: make test-contract
-
       - name: Install Playwright browsers
         working-directory: server
         run: make setup-playwright
 
-      - name: Run test
-        working-directory: server
-        run: make test
+      # GitHub sets CI=true; make ci passes the same flag to local test runs.
+      - name: Run CI checks
+        run: make ci
 
       - name: Upload test report on failure
         if: failure()

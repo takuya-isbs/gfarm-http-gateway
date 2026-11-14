@@ -2,6 +2,15 @@ test: test-unit test-flake8 test-playwright
 
 test-all: test-unit test-flake8 test-playwright test-client
 
+.PHONY: lint lint-python lint-frontend test-flake8
+
+lint: lint-python lint-frontend
+
+lint-python: test-flake8
+
+lint-frontend:
+	npm --prefix frontend/app/react-app run lint
+
 PYTEST_COV = --cov=api --cov-branch --cov-report=term
 
 test-unit:
