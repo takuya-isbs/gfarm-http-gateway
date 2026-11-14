@@ -22,6 +22,8 @@ playwright_fixture="/workspace/${host_fixture#"${gateway_root}/"}"
 default_test_image=mcr.microsoft.com/playwright:v1.64.1-noble
 docker_dist_client=${DOCKER_DIST_CLIENT:-gfarm-c1}
 docker_dist_user=${DOCKER_DIST_USER:-${USER:-$(id -un)}}
+docker_host_user=${USER:-$(id -un)}
+container_checkout_client="/home/${docker_host_user}/gfarm/$(basename "${gateway_root}")/client"
 gateway_url=${GFARM_HTTP_GATEWAY_URL:-http://gfarm-http-gateway-http:8000}
 test_username=${GFARM_HTTP_TEST_USERNAME:-user1}
 test_password=${GFARM_HTTP_TEST_PASSWORD:-}
@@ -198,13 +200,13 @@ initialize_test_paths() {
 prepare_gfarm_http() {
     local build_cmd
 
-    echo "[PREP] ${docker_dist_client} container: build gfarm-http from the" \
-        "client sources copied from the Docker host checkout..."
+    echo "[PREP] ${docker_dist_client} container: copy client sources from the" \
+        "mounted checkout and build gfarm-http..."
     docker exec --user "${docker_dist_user}" "${docker_dist_client}" \
         mkdir -p "${container_source_dir}"
     container_workdir_created=true
-    docker cp "${gateway_root}/client/." \
-        "${docker_dist_client}:${container_source_dir}"
+    docker exec --user "${docker_dist_user}" "${docker_dist_client}" \
+        cp -a "${container_checkout_client}/." "${container_source_dir}/"
     # The client test script resolves ../gfarm-http from client/test; build
     # here so it cannot pick up a stale ignored binary from the container.
     build_cmd="cd '${container_source_dir}' &&"
