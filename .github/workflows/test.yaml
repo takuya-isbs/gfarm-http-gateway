@@ -21,7 +21,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -31,7 +31,7 @@ jobs:
           go-version-file: ./client/go.mod
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 26
 
@@ -113,12 +113,12 @@ jobs:
           path: gfarm/gfarm-http-gateway
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 26
 
@@ -169,14 +169,18 @@ jobs:
           docker exec -u "$USER" -w "/home/$USER/gfarm/docker/dist" gfarm-c1 \
             sh ./all.sh
 
-      - name: Build and initialize Keycloak and JWT Server
+      - name: Build Keycloak and JWT Server images
         run: |
           docker compose -f gfarm/docker/dist/jwt-server/docker-compose.yaml \
             build jwt-server-back setup-keycloak
+
+      - name: Initialize Keycloak and JWT Server 1
+        run: timeout 10m make -C gfarm/docker/dist/jwt-server init-jwt-server1
+
+      - name: Start JWT Server
+        run: |
           docker compose -f gfarm/docker/dist/jwt-server/docker-compose.yaml \
-            up -d keycloak jwt-server-front
-          timeout 10m make -C gfarm/docker/dist/jwt-server \
-            setup-keycloak setup-jwt-server1
+            up -d jwt-server-front
 
       - name: Copy Gfarm CA certificates to Gateway
         run: |
