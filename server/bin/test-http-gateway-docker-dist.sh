@@ -24,6 +24,7 @@ docker_dist_client=${DOCKER_DIST_CLIENT:-gfarm-c1}
 docker_dist_user=${DOCKER_DIST_USER:-${USER:-$(id -un)}}
 docker_host_user=${USER:-$(id -un)}
 container_checkout_client="/home/${docker_host_user}/gfarm/$(basename "${gateway_root}")/client"
+docker_dist_workdir="/home/${docker_host_user}/gfarm/docker/dist"
 gateway_url=${GFARM_HTTP_GATEWAY_URL:-http://gfarm-http-gateway-http:8000}
 test_username=${GFARM_HTTP_TEST_USERNAME:-user1}
 test_password=${GFARM_HTTP_TEST_PASSWORD:-}
@@ -125,11 +126,30 @@ host_react_app_copy=
 results=()
 failed_count=0
 
+docker_dist_exec() {
+    local -a docker_options=(--user "${docker_dist_user}")
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -i|--interactive)
+                docker_options+=("$1")
+                shift
+                ;;
+            --env|--workdir)
+                docker_options+=("$1" "$2")
+                shift 2
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+
+    docker exec "${docker_options[@]}" "${docker_dist_client}" "$@"
+}
+
 client() {
-    docker exec \
-        --user "${docker_dist_user}" \
-        --env "GFARM_HTTP_URL=${gateway_url}" \
-        "${docker_dist_client}" \
+    docker_dist_exec --env "GFARM_HTTP_URL=${gateway_url}" \
         "${container_gfarm_http}" "$@"
 }
 
@@ -202,17 +222,14 @@ prepare_gfarm_http() {
 
     echo "[PREP] ${docker_dist_client} container: copy client sources from the" \
         "mounted checkout and build gfarm-http..."
-    docker exec --user "${docker_dist_user}" "${docker_dist_client}" \
-        mkdir -p "${container_source_dir}"
+    docker_dist_exec mkdir -p "${container_source_dir}"
     container_workdir_created=true
-    docker exec --user "${docker_dist_user}" "${docker_dist_client}" \
-        cp -a "${container_checkout_client}/." "${container_source_dir}/"
+    docker_dist_exec cp -a "${container_checkout_client}/." "${container_source_dir}/"
     # The client test script resolves ../gfarm-http from client/test; build
     # here so it cannot pick up a stale ignored binary from the container.
     build_cmd="cd '${container_source_dir}' &&"
     build_cmd+=" go build -o '${container_gfarm_http}' ./cmd/gfarm-http"
-    docker exec --user "${docker_dist_user}" "${docker_dist_client}" \
-        sh -c "${build_cmd}"
+    docker_dist_exec sh -c "${build_cmd}"
 }
 
 prepare_playwright_image() {
@@ -310,13 +327,11 @@ prepare_cli_credential() {
     echo "[PREP] ${docker_dist_client} container: stop jwt-agent..."
     # Ignore the exit status: no running jwt-agent must not fail the run.
     # (Not verified against every agent state.)
-    docker exec --user "${docker_dist_user}" "${docker_dist_client}" \
-        jwt-agent --stop >/dev/null 2>&1 || true
+    docker_dist_exec jwt-agent --stop >/dev/null 2>&1 || true
 
     echo "[PREP] ${docker_dist_client} container: start jwt-agent with the" \
         "generated passphrase..."
-    docker exec -i --user "${docker_dist_user}" "${docker_dist_client}" \
-        jwt-agent -s "${jwt_server_url}" -l "${test_username}" \
+    docker_dist_exec -i jwt-agent -s "${jwt_server_url}" -l "${test_username}" \
         <"${host_passphrase_file}" >/dev/null
     rm -f "${host_passphrase_file}"
 }
@@ -330,6 +345,16 @@ prepare_cli_credential_if_needed() {
         prepare_jwt_passphrase
         prepare_cli_credential
     fi
+}
+
+prepare_gfarm_oauth() {
+    echo "[PREP] ${docker_dist_client} container: map ${docker_dist_user} to" \
+        "SASL user ${test_username} and enable XOAUTH2..."
+    docker_dist_exec --workdir "${docker_dist_workdir}" \
+        sh ./edconf.sh sharedsecret >/dev/null
+    docker_dist_exec gfuser -A "${docker_dist_user}" SASL "${test_username}"
+    docker_dist_exec --workdir "${docker_dist_workdir}" \
+        sh ./edconf.sh oauth2 >/dev/null
 }
 
 prepare_test_root() {
@@ -512,6 +537,7 @@ run_selected_webui_case() {
 
     prepare_gfarm_http
     prepare_cli_credential_if_needed
+    prepare_gfarm_oauth
     prepare_test_root
 
     if [[ "${selected_webui_kind}" == integration ]]; then
@@ -530,10 +556,7 @@ run_selected_webui_case() {
 # separately and cleans up its unique test directory.
 test_cli_operations() {
     echo "  - ${docker_dist_client} container: run client/test/gfarm-http-test.sh..."
-    docker exec \
-        --user "${docker_dist_user}" \
-        --env "GFARM_HTTP_URL=${gateway_url}" \
-        "${docker_dist_client}" \
+    docker_dist_exec --env "GFARM_HTTP_URL=${gateway_url}" \
         sh -c "cd '${container_source_dir}' && ./test/gfarm-http-test.sh /tmp"
 }
 
@@ -655,6 +678,7 @@ main() {
     prepare_react_app_copy
     prepare_jwt_passphrase
     prepare_cli_credential
+    prepare_gfarm_oauth
     prepare_test_root
 
     # The tests are independent: every test runs, even if an earlier one failed.
