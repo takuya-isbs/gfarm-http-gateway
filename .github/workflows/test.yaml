@@ -172,9 +172,9 @@ jobs:
       - name: Build and initialize Keycloak and JWT Server
         run: |
           docker compose -f gfarm/docker/dist/jwt-server/docker-compose.yaml \
-            build jwt-server setup-keycloak
+            build jwt-server-back setup-keycloak
           docker compose -f gfarm/docker/dist/jwt-server/docker-compose.yaml \
-            up -d keycloak jwt-server
+            up -d keycloak jwt-server-front
           timeout 10m make -C gfarm/docker/dist/jwt-server \
             setup-keycloak setup-jwt-server1
 

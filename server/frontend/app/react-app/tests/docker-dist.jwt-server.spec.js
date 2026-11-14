@@ -12,8 +12,16 @@ test("obtain a JWT passphrase from the docker/dist JWT Server", async ({ page })
     expect(passphraseFile).toBeTruthy();
     expect(jwtServerURL, "JWT_SERVER_URL must be set by the docker/dist test runner").toBeTruthy();
 
-    await page.goto(jwtServerURL);
-    await page.locator("#username").fill(username);
+    const response = await page.goto(jwtServerURL);
+    const destination = new URL(page.url());
+    const usernameField = page.locator("#username");
+    console.log(
+        `[JWT Server] status=${response?.status() ?? "no response"} ` +
+            `page=${destination.origin}${destination.pathname} ` +
+            `title=${JSON.stringify(await page.title())} ` +
+            `#username=${await usernameField.count()}`,
+    );
+    await usernameField.fill(username);
     await page.locator("#password").fill(password);
     await page.locator("#kc-login").click();
     await page.waitForURL(`${new URL(jwtServerURL).origin}/**`);
@@ -26,7 +34,7 @@ test("obtain a JWT passphrase from the docker/dist JWT Server", async ({ page })
     });
     await page
         .getByRole("button", {
-            name: /Invalidate and\s+Re-Generate\s+a JSON Web Token/,
+            name: /(?:Generate and Store|Invalidate and\s+Re-Generate)\s+a JSON Web Token/,
         })
         .click();
     const passphraseResponse = await passphraseResponsePromise;
