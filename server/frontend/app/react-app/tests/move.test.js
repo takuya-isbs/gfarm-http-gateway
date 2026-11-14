@@ -1,4 +1,4 @@
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./api-coverage-fixture");
 
 const {
     handleRoute,

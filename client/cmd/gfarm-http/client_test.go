@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestCmdChmodUsesPut(t *testing.T) {
+func TestAPIChmodUsesPut(t *testing.T) {
 	t.Setenv("GFARM_SASL_USER", "anonymous")
 	t.Setenv("GFARM_SASL_PASSWORD", "")
 
@@ -39,7 +39,7 @@ func TestCmdChmodUsesPut(t *testing.T) {
 	}
 }
 
-func TestCmdCopyUsesPut(t *testing.T) {
+func TestAPICopyUsesPut(t *testing.T) {
 	t.Setenv("GFARM_SASL_USER", "anonymous")
 	t.Setenv("GFARM_SASL_PASSWORD", "")
 
@@ -61,7 +61,7 @@ func TestCmdCopyUsesPut(t *testing.T) {
 	}
 }
 
-func TestCmdSetfaclUsesPut(t *testing.T) {
+func TestAPISetfaclUsesPut(t *testing.T) {
 	t.Setenv("GFARM_SASL_USER", "anonymous")
 	t.Setenv("GFARM_SASL_PASSWORD", "")
 
@@ -83,7 +83,7 @@ func TestCmdSetfaclUsesPut(t *testing.T) {
 	}
 }
 
-func TestLogRequestRedactsAuthorization(t *testing.T) {
+func TestUnitLogRequestRedactsAuthorization(t *testing.T) {
 	reader, writer, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("create pipe: %v", err)

@@ -12,6 +12,11 @@ import { defineConfig, devices } from "@playwright/test";
 /**
  * @see https://playwright.dev/docs/test-configuration
  */
+const reporters = [["html", { outputFolder: "playwright-report", open: "on-failure" }]];
+if (process.env.GFARM_HTTP_API_COVERAGE_FILE) {
+    reporters.push(["./tests/openapi-coverage-reporter.js", {}]);
+}
+
 export default defineConfig({
     testDir: "./tests",
     /* docker/dist integration specs need the docker/dist runner's environment. */
@@ -25,7 +30,7 @@ export default defineConfig({
     /* Opt out of parallel tests on CI. */
     workers: process.env.CI ? 1 : undefined,
     /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-    reporter: [["html", { outputFolder: "playwright-report", open: "on-failure" }]],
+    reporter: reporters,
     /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
     use: {
         /* Base URL to use in actions like `await page.goto('/')`. */

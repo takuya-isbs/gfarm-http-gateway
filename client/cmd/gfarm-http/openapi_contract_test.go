@@ -26,7 +26,7 @@ type openAPIOperation struct {
 	RequestBody map[string]any   `json:"requestBody"`
 }
 
-func TestCLIRequestsMatchServerOpenAPI(t *testing.T) {
+func TestAPIRequestsMatchServerOpenAPI(t *testing.T) {
 	specJSON := os.Getenv("GFARM_HTTP_OPENAPI_JSON")
 	if specJSON == "" {
 		t.Skip("GFARM_HTTP_OPENAPI_JSON is set by make test-contract")
@@ -63,7 +63,6 @@ func TestCLIRequestsMatchServerOpenAPI(t *testing.T) {
 		{"cmdUserInfo", func(c *Client) error { return c.cmdUserInfo() }},
 		{"cmdZip", func(c *Client) error { return c.cmdZip([]string{"/tmp/file"}, "/dev/null") }},
 	}
-
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var request *http.Request
@@ -90,24 +89,55 @@ func TestCLIRequestsMatchServerOpenAPI(t *testing.T) {
 			if err := validateOpenAPIRequest(request, &spec); err != nil {
 				t.Fatalf("request %s %s violates server OpenAPI: %v", request.Method, request.URL, err)
 			}
+			if err := recordAPIRequestCoverage(t, "cli", request); err != nil {
+				t.Fatalf("record API request coverage: %v", err)
+			}
 			t.Logf("%s request matches OpenAPI: %s %s", tc.name, request.Method, request.URL.Path)
 		})
 	}
 }
 
-func validateOpenAPIRequest(request *http.Request, spec *openAPIDocument) error {
-	var operation *openAPIOperation
-	for route, methods := range spec.Paths {
-		if routeMatches(route, request.URL.Path) {
-			if candidate, ok := methods[strings.ToLower(request.Method)]; ok {
-				operation = &candidate
-				break
-			}
+func recordAPIRequestCoverage(t *testing.T, client string, request *http.Request) error {
+	t.Helper()
+	coverageFile := os.Getenv("GFARM_HTTP_API_COVERAGE_FILE")
+	if coverageFile == "" {
+		return nil
+	}
+	file, err := os.OpenFile(coverageFile, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	evidence := struct {
+		Client string              `json:"client"`
+		Method string              `json:"method"`
+		Path   string              `json:"path"`
+		Query  map[string][]string `json:"query"`
+	}{
+		Client: client,
+		Method: request.Method,
+		Path:   request.URL.Path,
+		Query:  request.URL.Query(),
+	}
+	return json.NewEncoder(file).Encode(evidence)
+}
+
+func findOpenAPIOperation(method, requestPath string, paths map[string]map[string]openAPIOperation) (string, bool) {
+	for route, methods := range paths {
+		if _, ok := methods[strings.ToLower(method)]; ok && routeMatches(route, requestPath) {
+			return strings.ToUpper(method) + " " + route, true
 		}
 	}
-	if operation == nil {
+	return "", false
+}
+
+func validateOpenAPIRequest(request *http.Request, spec *openAPIDocument) error {
+	operationName, ok := findOpenAPIOperation(request.Method, request.URL.Path, spec.Paths)
+	if !ok {
 		return fmt.Errorf("no matching operation")
 	}
+	methodAndPath := strings.SplitN(operationName, " ", 2)
+	operation := spec.Paths[methodAndPath[1]][strings.ToLower(methodAndPath[0])]
 	params := map[string]map[string]any{}
 	for _, parameter := range operation.Parameters {
 		if parameter["in"] == "query" {

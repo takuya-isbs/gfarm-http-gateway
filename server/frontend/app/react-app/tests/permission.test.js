@@ -1,6 +1,6 @@
 // tests/test_perms_tab.spec.js
 
-const { test, expect } = require("@playwright/test");
+const { test, expect } = require("./api-coverage-fixture");
 const fs = require("fs");
 
 const {

@@ -172,25 +172,9 @@ Enable verbose output for troubleshooting:
 gfarm-http -v ls /tmp
 ```
 
-### Test
+### Tests
 
-Ensure a temporary directory exists in Gfarm (required).  
-If it does not exist, create it:
-```bash
-gfmkdir -m 1777 /tmp
-```
-
-Run the tests:
-
-```bash
-make test
-```
-
-### OpenAPI contract tests
-
-From this directory, run `make test-contract` to fetch the server's `/openapi.json` through its test client and compare it with requests sent by each Go CLI operation. The output names each client function and reports whether its request matches OpenAPI. It requires the sibling `server/venv` created by `make -C ../server setup-latest` and runs the Go tests with coverage.
-
-The helper sets a fixed Fernet-valid key only to import the app for schema retrieval. It is not a Gateway deployment key.
+For the Gfarm-independent test workflow, real Gfarm integration tests, and commands for running individual tests, see [Development tests](../README.md#development-tests).
 
 ## jwt-curl
 

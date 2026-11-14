@@ -30,3 +30,50 @@ For setup, configuration, and detailed usage, see:
 
 - **Server:** [server/README.md](./server/README.md) - startup, configuration  
 - **Client:** [client/README.md](./client/README.md) - usage
+
+## Development tests
+
+Run the Gfarm-independent test suites and coverage reports from the repository root:
+
+```sh
+make test-unit-all
+```
+
+This runs the server Python tests and coverage, Go client API/unit statement coverage, and CLI/Web UI OpenAPI request coverage. The Web UI tests use API mocks. No live Gfarm is required. OpenAPI coverage reports CLI, Web UI, and combined rates for operations, path/query parameters, and enum/boolean values; it lists missing items and fails below the checked-in baseline. API and code coverage remain separate metrics.
+
+`test-api-coverage` runs one Go OpenAPI request test to record CLI requests, then directly runs the same `npm run e2e:chromium` suite as `make -C server test-playwright` to record Web UI requests. `test-unit-all` runs `client test-coverage` and then the complete `test-api-coverage` target. The focused Go request test is repeated once to collect CLI request evidence; the Playwright suite runs once.
+
+The Go coverage target selects tests named with the `TestAPI` and `TestUnit` prefixes. Keep new Go tests in one of these categories so `test-unit-all` includes them. To run the complete Go suite without category filtering, use `make -C client test-contract`.
+
+Prerequisites:
+
+- Node.js and project setup:
+  - If Node.js 26 is already installed, activate it (for example, `nvm use 26`) and run `make -C server setup-latest`. This target uses `INSTALL_SYS_PACKAGES=0`; it creates the Python environment and runs `npm ci` plus the frontend build, but does not install Node.js.
+  - If Node.js 26 and system packages are needed, run `make -C server setup-latest-with-sys-packages`. This sets `INSTALL_SYS_PACKAGES=1`, installs Node.js 26 through nvm, and then performs the Python and frontend setup.
+- Install Playwright Chromium with `make -C server setup-playwright`.
+
+GitHub Actions can use `make test-unit-all` as its Gfarm-independent test and coverage entry point after installing these prerequisites.
+
+### Run one test while developing
+
+| Component | Run from | Command |
+| --- | --- | --- |
+| Go client | `client/` | `go test ./cmd/gfarm-http -run '^TestAPIChmodUsesPut$' -v` |
+| Server Python | `server/` | `./bin/gfarm-http-gateway-test.sh api/test/test_api_route_coverage.py -k test_analyze_coverage_counts_operations_parameters_and_values_per_client` |
+| Web UI | `server/frontend/app/react-app/` | `npm run e2e:chromium -- tests/download.test.js` |
+
+### Test against a real Gfarm
+
+The real Gfarm tests are separate from `test-unit-all`:
+
+- CLI through a configured Gateway: Run `make -C client test`. Configure `GFARM_HTTP_URL` and authentication, and ensure `/tmp` exists in Gfarm.
+- CLI and Web UI through the docker/dist Gateway: Set `GFARM_HTTP_TEST_PASSWORD` for the Keycloak test user, then run `make -C ../docker/dist/http-gateway test` from this repository root.
+
+The docker/dist stack must already be prepared. This test creates and removes temporary Gfarm test data and restarts c1's `jwt-agent`, invalidating its previous token. See `docker/dist/http-gateway/README.md` in the Gfarm checkout for setup and operational details.
+
+### Run a component test suite
+
+- Server Python tests: `make -C server test-unit`.
+- Complete Go test suite with OpenAPI request checks: `make -C client test-contract`.
+- Go client statement coverage: `make -C client test-coverage`.
+- CLI and Web UI API coverage: `make test-api-coverage` from the repository root.

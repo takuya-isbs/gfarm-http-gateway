@@ -1,4 +1,4 @@
-const { test, expect } = require("@playwright/test");
+const { test, expect, trackApiRequests } = require("./api-coverage-fixture");
 const fs = require("fs");
 const path = require("path");
 
@@ -221,6 +221,7 @@ test("[Android] Should trigger install prompt when A2HS button is clicked", asyn
         viewport: { width: 412, height: 915 },
     });
     const page = await context.newPage();
+    trackApiRequests(page);
     await page.route(`${API_URL}/**`, login_handleRoute);
     login = false;
 
@@ -261,6 +262,7 @@ test("[iOS] Should show instructions modal when A2HS button is clicked", async (
     });
 
     const page = await context.newPage();
+    trackApiRequests(page);
     await page.route(`${API_URL}/**`, login_handleRoute);
     login = false;
 

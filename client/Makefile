@@ -5,6 +5,8 @@ JWT_CURL        ?= jwt-curl
 JWT_CURL_UPLOAD ?= jwt-curl-upload
 
 TEST_SCRIPT     ?= ./test/gfarm-http-test.sh
+API_COVERAGE_PROFILE ?= /tmp/gfarm-http-api.cover
+UNIT_COVERAGE_PROFILE ?= /tmp/gfarm-http-unit.cover
 
 PREFIX  ?= /usr/local
 BINDIR  ?= $(PREFIX)/bin
@@ -15,7 +17,7 @@ INSTALL_PROGRAM  ?= $(INSTALL) -m 0755
 
 TAG := $(shell git describe --tags --match 'client/*' --dirty --always 2>/dev/null || git rev-parse --short HEAD)
 
-.PHONY: all build clean install uninstall test test-contract
+.PHONY: all build clean install uninstall test test-contract test-coverage
 
 all: build
 
@@ -42,3 +44,8 @@ test: build
 test-contract:
 	spec="$$($(CURDIR)/../server/venv/bin/python $(CURDIR)/../server/bin/fetch-openapi-json.py)" && \
 	GFARM_HTTP_OPENAPI_JSON="$$spec" go test -v -cover ./...
+
+test-coverage:
+	spec="$$($(CURDIR)/../server/venv/bin/python $(CURDIR)/../server/bin/fetch-openapi-json.py)" && \
+	GFARM_HTTP_OPENAPI_JSON="$$spec" go test ./... -count=1 -run '^TestAPI' -v -coverprofile=$(API_COVERAGE_PROFILE)
+	go test ./... -run '^TestUnit' -coverprofile=$(UNIT_COVERAGE_PROFILE)

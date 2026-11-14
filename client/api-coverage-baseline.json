@@ -1,0 +1,17 @@
+{
+  "cli": {
+    "operations": {"covered": 19, "total": 28},
+    "parameters": {"covered": 24, "total": 39},
+    "values": {"covered": 15, "total": 32}
+  },
+  "webui": {
+    "operations": {"covered": 20, "total": 28},
+    "parameters": {"covered": 20, "total": 39},
+    "values": {"covered": 10, "total": 32}
+  },
+  "combined": {
+    "operations": {"covered": 22, "total": 28},
+    "parameters": {"covered": 26, "total": 39},
+    "values": {"covered": 17, "total": 32}
+  }
+}
