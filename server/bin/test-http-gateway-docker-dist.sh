@@ -201,10 +201,10 @@ prepare_gfarm_http() {
     echo "[PREP] ${docker_dist_client} container: build gfarm-http from the" \
         "client sources copied from the Docker host checkout..."
     docker exec --user "${docker_dist_user}" "${docker_dist_client}" \
-        mkdir -p "${container_workdir}"
+        mkdir -p "${container_source_dir}"
     container_workdir_created=true
-    docker cp "${gateway_root}/client" \
-        "${docker_dist_client}:${container_workdir}"
+    docker cp "${gateway_root}/client/." \
+        "${docker_dist_client}:${container_source_dir}"
     # The client test script resolves ../gfarm-http from client/test; build
     # here so it cannot pick up a stale ignored binary from the container.
     build_cmd="cd '${container_source_dir}' &&"
