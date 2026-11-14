@@ -70,8 +70,9 @@ The real Gfarm tests are separate from `test-unit-all`:
 
 - CLI through a configured Gateway: Run `make -C client test`. Configure `GFARM_HTTP_URL` and authentication, and ensure `/tmp` exists in Gfarm.
 - CLI and Web UI through the docker/dist Gateway: Set `GFARM_HTTP_TEST_PASSWORD` for the Keycloak test user, then run `make -C ../docker/dist/http-gateway test` from this repository root.
+- One docker/dist Web UI case: list titles with `make -C ../docker/dist/http-gateway list-webui-cases`, then set `GFARM_HTTP_WEBUI_CASE` to one exact title and run `make -C ../docker/dist/http-gateway test-webui`.
 
-The docker/dist stack must already be prepared. This test creates and removes temporary Gfarm test data and restarts c1's `jwt-agent`, invalidating its previous token. See `docker/dist/http-gateway/README.md` in the Gfarm checkout for setup and operational details.
+The docker/dist stack must already be prepared. The full test creates and removes temporary Gfarm test data and refreshes c1's `jwt-agent`; a selected Web UI test reuses a valid agent credential when possible. See `docker/dist/http-gateway/README.md` in the Gfarm checkout for setup and operational details.
 
 ### Run a component test suite
 
