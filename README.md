@@ -54,6 +54,14 @@ Prerequisites:
 
 GitHub Actions runs `make ci` after installing these prerequisites. Run the same checks locally with `make ci`; Playwright uses CI mode with one worker in both environments. Direct `make test-unit-all` calls preserve the caller's CI setting.
 
+GitHub Actions also runs a real-Gfarm integration job in parallel with `make ci`:
+
+- Checkout: Gfarm branch `feature/docker-dist-gfarm-http-gateway` under `gfarm/`; this repository under `gfarm/gfarm-http-gateway/`.
+- Services: Start the `docker/dist` Gfarm, Keycloak, JWT Server, and Gateway.
+- Test: Run the same `make -C docker/dist/http-gateway test` command used locally.
+- Failure logs: Upload service logs when the integration job fails.
+- After the Gfarm work branch is merged, switch the workflow checkout to the default branch.
+
 Run only the local lint checks with `make lint`: Go formatting and `go vet`, Python `flake8`, and React source ESLint.
 
 ### Run one test while developing

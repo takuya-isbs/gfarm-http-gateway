@@ -92,3 +92,135 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           branch: ${{ github.ref }}
           force: false
+
+  docker-dist-integration:
+    name: Real-Gfarm docker/dist integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - name: checkout Gfarm
+        uses: actions/checkout@v7
+        with:
+          repository: takuya-isbs/gfarm
+          ref: feature/docker-dist-gfarm-http-gateway
+          path: gfarm
+
+      - name: checkout gfarm-http-gateway
+        uses: actions/checkout@v7
+        with:
+          path: gfarm/gfarm-http-gateway
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 26
+
+      - name: Install development dependencies and freeze runtime requirements
+        run: |
+          make -C gfarm/gfarm-http-gateway/server setup-latest
+          make -C gfarm/gfarm-http-gateway/server freeze
+
+      - name: Get Docker build user
+        id: user
+        run: |
+          echo "name=$(id -un)" >> "$GITHUB_OUTPUT"
+          echo "uid=$(id -u)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and load minica image
+        uses: docker/build-push-action@v7
+        with:
+          context: gfarm/docker/dist/minica
+          tags: gfarm-minica
+          load: true
+          cache-from: type=gha,scope=gfarm-http-gateway-minica
+          cache-to: type=gha,mode=max,scope=gfarm-http-gateway-minica
+
+      - name: Build and load Gfarm image
+        uses: docker/build-push-action@v7
+        with:
+          context: gfarm
+          file: gfarm/docker/dist/ubuntu/Dockerfile
+          tags: gfarm-ubuntu
+          load: true
+          build-args: |
+            USERNAME=${{ steps.user.outputs.name }}
+            UID=${{ steps.user.outputs.uid }}
+          cache-from: type=gha,scope=gfarm-http-gateway-gfarm-ubuntu
+          cache-to: type=gha,mode=max,scope=gfarm-http-gateway-gfarm-ubuntu
+
+      - name: Create docker/dist certificates and start Gfarm containers
+        run: |
+          cd gfarm/docker/dist
+          MINICA_SKIP_BUILD=1 sh ./minica.sh
+          docker compose up -d --no-build
+
+      - name: Build and initialize Gfarm
+        run: |
+          docker exec -u "$USER" -w "/home/$USER/gfarm/docker/dist" gfarm-c1 \
+            sh ./all.sh
+
+      - name: Build and initialize Keycloak and JWT Server
+        run: |
+          docker compose -f gfarm/docker/dist/jwt-server/docker-compose.yaml \
+            build jwt-server setup-keycloak
+          docker compose -f gfarm/docker/dist/jwt-server/docker-compose.yaml \
+            up -d keycloak jwt-server
+          timeout 10m make -C gfarm/docker/dist/jwt-server \
+            setup-keycloak setup-jwt-server1
+
+      - name: Copy Gfarm CA certificates to Gateway
+        run: |
+          mkdir -p gfarm/docker/dist/http-gateway/config/certs
+          docker cp gfarm-c1:/etc/grid-security/certificates/. \
+            gfarm/docker/dist/http-gateway/config/certs/
+
+      - name: Build and start Gateway
+        run: make -C gfarm/docker/dist/http-gateway up
+
+      - name: Wait for Gateway
+        run: |
+          for attempt in $(seq 1 60); do
+            if docker exec gfarm-c1 curl --fail --silent \
+              http://gfarm-http-gateway-http:8000/openapi.json >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Gateway did not become ready within 120 seconds." >&2
+          exit 1
+
+      - name: Run real-Gfarm integration test
+        env:
+          GFARM_HTTP_TEST_PASSWORD: PASSWORD
+        run: make -C gfarm/docker/dist/http-gateway test
+
+      - name: Collect container logs on failure
+        if: failure()
+        run: |
+          mkdir -p "$RUNNER_TEMP/docker-dist-logs"
+          docker compose -f gfarm/docker/dist/docker-compose.yaml logs --no-color \
+            > "$RUNNER_TEMP/docker-dist-logs/gfarm-compose.log" 2>&1 || true
+          docker compose -f gfarm/docker/dist/jwt-server/docker-compose.yaml logs --no-color \
+            > "$RUNNER_TEMP/docker-dist-logs/jwt-server-compose.log" 2>&1 || true
+          docker compose --env-file gfarm/docker/dist/http-gateway/.env \
+            -f gfarm/docker/dist/http-gateway/docker-compose.yaml logs --no-color \
+            > "$RUNNER_TEMP/docker-dist-logs/gateway-compose.log" 2>&1 || true
+          docker exec gfarm-c1 journalctl -b -n 1000 --no-pager \
+            > "$RUNNER_TEMP/docker-dist-logs/gfarm-c1-journal.log" 2>&1 || true
+
+      - name: Upload container logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: docker-dist-integration-logs
+          path: ${{ runner.temp }}/docker-dist-logs/
