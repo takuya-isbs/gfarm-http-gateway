@@ -19,7 +19,7 @@ test("obtain a JWT passphrase from the docker/dist JWT Server", async ({ page })
         `[JWT Server] status=${response?.status() ?? "no response"} ` +
             `page=${destination.origin}${destination.pathname} ` +
             `title=${JSON.stringify(await page.title())} ` +
-            `#username=${await usernameField.count()}`,
+            `#username=${await usernameField.count()}`
     );
     await usernameField.fill(username);
     await page.locator("#password").fill(password);

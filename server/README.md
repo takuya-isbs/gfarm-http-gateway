@@ -915,7 +915,7 @@ Set up the environment in `server/` before running them:
 - `make setup-latest` - create the Python virtual environment, install Python dependencies, and run `npm ci` plus the frontend build. Activate Node.js 26 first; this target does not install Node.js or system packages.
 - `make setup-latest-with-sys-packages` - install system packages and Node.js 26 through nvm, then set up Python and the frontend. Activate Node.js 26 with `nvm use 26` before running tests or lint in a later shell.
 - `make setup-playwright` - install Chromium and its system dependencies for the Playwright tests.
-- `make lint` - run Python flake8 and React source ESLint.
+- `make lint` - run Python flake8, React source ESLint, and ESLint/Prettier checks for JavaScript test files and Playwright configuration.
 
 - `make test-all` - run all available tests (server + client).
   -  Requires the client to be built first (`cd ../client && make`).

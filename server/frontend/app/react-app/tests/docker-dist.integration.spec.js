@@ -34,8 +34,10 @@ test("real Keycloak login and Gfarm file sharing with gfarm-http", async ({ page
     );
 
     const directoryResponsePromise = page.waitForResponse((response) => {
-        return response.request().method() === "GET" &&
-            new URL(response.url()).pathname.includes("/dir/");
+        return (
+            response.request().method() === "GET" &&
+            new URL(response.url()).pathname.includes("/dir/")
+        );
     });
     await page.goto(`/#/ui${testDirectory}`);
     expect((await directoryResponsePromise).ok()).toBeTruthy();

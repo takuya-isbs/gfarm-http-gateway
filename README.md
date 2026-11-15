@@ -62,7 +62,7 @@ GitHub Actions also runs a real-Gfarm integration job in parallel with `make ci`
 - Failure logs: Upload service logs when the integration job fails.
 - After the Gfarm work branch is merged, switch the workflow checkout to the default branch.
 
-Run only the local lint checks with `make lint`: Go formatting and `go vet`, Python `flake8`, and React source ESLint.
+Run only the local lint checks with `make lint`: Go formatting and `go vet`, Python `flake8`, React source ESLint, and ESLint/Prettier for JavaScript test files and their Playwright configuration.
 
 ### Run one test while developing
 
@@ -88,4 +88,4 @@ The docker/dist stack must already be prepared. The full test creates and remove
 - Complete Go test suite with OpenAPI request checks: `make -C client test-contract`.
 - Go client statement coverage: `make -C client test-coverage`.
 - CLI and Web UI API coverage: `make test-api-coverage` from the repository root.
-- Go, Python, and React source lint: `make lint` from the repository root.
+- Go, Python, React source, and JavaScript test lint: `make lint` from the repository root.

@@ -14,7 +14,7 @@
   "scripts": {
     "start": "vite --mode development --no-open",
     "build": "vite build --mode production",
-    "lint": "eslint ./src --ext .js,.jsx",
+    "lint": "eslint ./src tests playwright*.config.js --ext .js,.jsx && prettier --check \"tests/**/*.js\" playwright*.config.js",
     "lint:fix": "eslint ./src --ext .js,.jsx --fix",
     "e2e:all": "playwright test",
     "e2e:chromium": "playwright test --project=chromium",
