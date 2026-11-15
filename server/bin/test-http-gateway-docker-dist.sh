@@ -19,7 +19,7 @@ react_app_dir="${gateway_root}/server/frontend/app/react-app"
 host_fixture="${react_app_dir}/tests/data/docker-dist-upload.txt"
 playwright_fixture="/workspace/${host_fixture#"${gateway_root}/"}"
 
-default_test_image=mcr.microsoft.com/playwright:v1.64.1-noble
+default_test_image=$(<"${script_dir}/playwright-docker-image.txt")
 docker_dist_client=${DOCKER_DIST_CLIENT:-gfarm-c1}
 docker_dist_user=${DOCKER_DIST_USER:-${USER:-$(id -un)}}
 docker_host_user=${USER:-$(id -un)}

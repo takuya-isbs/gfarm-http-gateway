@@ -141,7 +141,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      # Pull registry images concurrently; versions come from the compose files.
+      # Pull Compose images and the Playwright image concurrently.
       # --ignore-pull-failures skips locally built images (for example gfarm-jwt-server:local).
       - name: Pull registry images in parallel
         run: |
@@ -152,6 +152,10 @@ jobs:
             docker compose -f "$compose_file" pull --ignore-buildable --ignore-pull-failures --quiet &
             pids+=("$!")
           done
+          playwright_image=$(<gfarm/gfarm-http-gateway/server/bin/playwright-docker-image.txt)
+          echo "[PREP] Docker host: pulling Playwright image ${playwright_image}..."
+          docker pull "$playwright_image" &
+          pids+=("$!")
           status=0
           for pid in "${pids[@]}"; do
             wait "$pid" || status=1
