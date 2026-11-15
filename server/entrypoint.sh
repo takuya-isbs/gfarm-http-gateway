@@ -12,10 +12,13 @@ else
 fi
 
 # Copy certificate files
-if [ -d /config/certs ]; then
+if [ -d /config/certs ] && compgen -G "/config/certs/*" > /dev/null; then
     echo "[INFO] Copying certs from /config/certs to /etc/pki/tls/certs/gfarm/"
     mkdir -p /etc/pki/tls/certs/gfarm
     cp -u /config/certs/* /etc/pki/tls/certs/gfarm/
+elif [ -d /config/certs ]; then
+    echo "[ERROR] No Gfarm CA certificates found in /config/certs; populate this mounted directory before starting the Gateway" >&2
+    exit 1
 else
     echo "[WARN] /config/certs not found"
 fi

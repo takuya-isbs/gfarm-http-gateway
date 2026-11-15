@@ -9,7 +9,7 @@ on:
   pull_request:
 
 jobs:
-  test:
+  unit-test:
     # Keep ubuntu-latest so future Ubuntu updates expose compatibility problems across the CI checks.
     permissions:
       contents: write
@@ -94,7 +94,7 @@ jobs:
           force: false
 
   docker-dist-integration:
-    name: Real-Gfarm docker/dist integration
+    name: docker/dist integration
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
@@ -183,10 +183,7 @@ jobs:
             up -d jwt-server-front
 
       - name: Copy Gfarm CA certificates to Gateway
-        run: |
-          mkdir -p gfarm/docker/dist/http-gateway/config/certs
-          docker cp gfarm-c1:/etc/grid-security/certificates/. \
-            gfarm/docker/dist/http-gateway/config/certs/
+        run: make -C gfarm/docker/dist/http-gateway setup
 
       - name: Build and start Gateway
         run: make -C gfarm/docker/dist/http-gateway up
