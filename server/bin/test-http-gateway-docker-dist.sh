@@ -148,6 +148,18 @@ docker_dist_exec() {
     docker exec "${docker_options[@]}" "${docker_dist_client}" "$@"
 }
 
+copy_to_client() {
+    local host_path=$1 container_path=$2
+
+    docker_dist_exec -i tee -- "${container_path}" <"${host_path}" >/dev/null
+}
+
+copy_from_client() {
+    local container_path=$1 host_path=$2
+
+    docker_dist_exec cat -- "${container_path}" >"${host_path}"
+}
+
 api_cli() {
     docker_dist_exec --env "GFARM_HTTP_URL=${gateway_url}" \
         "${container_gfarm_http}" "$@"
@@ -516,7 +528,7 @@ seed_webui_operations() {
         fi
         if [[ "${copied_fixture}" == false ]]; then
             log_client_workdir "before Web UI fixture copy"
-            docker cp "${host_fixture}" "${docker_dist_client}:${container_upload_fixture}"
+            copy_to_client "${host_fixture}" "${container_upload_fixture}"
             copied_fixture=true
         fi
         api_cli upload "${container_upload_fixture}" "${gfarm_test_directory}/${fixture}"
@@ -527,7 +539,7 @@ seed_webui_login_upload() {
     echo "[PREP] Gfarm: upload CLI fixture from ${docker_dist_client} to" \
         "${gfarm_login_upload_directory}..."
     log_client_workdir "before selected Web UI login fixture copy"
-    docker cp "${host_fixture}" "${docker_dist_client}:${container_upload_fixture}"
+    copy_to_client "${host_fixture}" "${container_upload_fixture}"
     api_cli mkdir "${gfarm_login_upload_directory}"
     api_cli upload "${container_upload_fixture}" \
         "${gfarm_login_upload_directory}/${cli_uploaded_file}"
@@ -539,7 +551,7 @@ verify_webui_upload() {
     api_cli download \
         "${gfarm_login_upload_directory}/${web_uploaded_file}" \
         "${container_download}"
-    docker cp "${docker_dist_client}:${container_download}" "${host_download}"
+    copy_from_client "${container_download}" "${host_download}"
     cmp "${host_fixture}" "${host_download}"
 }
 
@@ -585,7 +597,7 @@ test_webui_login_and_upload() {
     echo "  - Gfarm: upload CLI fixture from ${docker_dist_client} to" \
         "${gfarm_dir}..."
     log_client_workdir "before Web UI login fixture copy"
-    docker cp "${host_fixture}" "${docker_dist_client}:${container_upload_fixture}"
+    copy_to_client "${host_fixture}" "${container_upload_fixture}"
     api_cli mkdir "${gfarm_dir}"
     api_cli upload "${container_upload_fixture}" "${gfarm_dir}/${cli_uploaded_file}"
 
@@ -611,7 +623,7 @@ test_webui_login_and_upload() {
     echo "  - Gfarm -> ${docker_dist_client} container -> Docker host: download" \
         "Web UI upload with gfarm-http and compare with local fixture..."
     api_cli download "${gfarm_dir}/${web_uploaded_file}" "${container_download}"
-    docker cp "${docker_dist_client}:${container_download}" "${host_download}"
+    copy_from_client "${container_download}" "${host_download}"
     cmp "${host_fixture}" "${host_download}"
 }
 
