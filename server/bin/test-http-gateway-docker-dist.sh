@@ -358,6 +358,9 @@ prepare_gfarm_oauth() {
 }
 
 prepare_test_root() {
+    echo "[PREP] Gfarm: create shared temporary directory /tmp if needed..."
+    docker_dist_exec gfmkdir -p /tmp
+    docker_dist_exec gfchmod 1777 /tmp || :
     echo "[PREP] Gfarm: create test directory ${gfarm_test_root} via gfarm-http" \
         "in ${docker_dist_client}..."
     client mkdir "${gfarm_test_root}"
