@@ -110,12 +110,12 @@ cli_uploaded_file="from-client.txt"
 web_uploaded_file=$(basename "${host_fixture}")
 container_workdir=
 container_workdir_created=false
-container_source_dir="${container_workdir}/client"
-container_source="${container_workdir}/${cli_uploaded_file}"
-container_download="${container_workdir}/${web_uploaded_file}"
-container_gfarm_http="${container_source_dir}/gfarm-http"
-gfarm_test_directory="${gfarm_test_root}/webui"
-gfarm_login_upload_directory="${gfarm_test_root}/webui-login-upload"
+container_client_source_dir=
+container_upload_fixture=
+container_download=
+container_gfarm_http=
+gfarm_test_directory=
+gfarm_login_upload_directory=
 playwright_passphrase_file="/run/gfarm-test-secrets/jwt-passphrase"
 host_download=
 host_secret_dir=
@@ -148,14 +148,24 @@ docker_dist_exec() {
     docker exec "${docker_options[@]}" "${docker_dist_client}" "$@"
 }
 
-client() {
+api_cli() {
     docker_dist_exec --env "GFARM_HTTP_URL=${gateway_url}" \
         "${container_gfarm_http}" "$@"
 }
 
+log_client_workdir() {
+    local stage=$1
+
+    echo "[DIAG] ${docker_dist_client} work directory ${stage}:"
+    docker inspect --format \
+        '[DIAG] container={{.Id}} started={{.State.StartedAt}} restarts={{.RestartCount}}' \
+        "${docker_dist_client}" || true
+    docker_dist_exec ls -ld "${container_workdir}" "${container_client_source_dir}" || true
+}
+
 cleanup() {
     if [[ "${gfarm_test_root_created}" == true ]]; then
-        client rm -r -f "${gfarm_test_root}" >/dev/null 2>&1 || true
+        api_cli rm -r -f "${gfarm_test_root}" >/dev/null 2>&1 || true
     fi
     if [[ "${container_workdir_created}" == true ]]; then
         docker exec "${docker_dist_client}" \
@@ -209,10 +219,10 @@ initialize_test_paths() {
     gfarm_test_directory="${gfarm_test_root}/webui"
     gfarm_login_upload_directory="${gfarm_test_root}/webui-login-upload"
     container_workdir="/tmp/gfarm-http-gateway-test-client-${random_suffix}"
-    container_source_dir="${container_workdir}/client"
-    container_source="${container_workdir}/${cli_uploaded_file}"
+    container_client_source_dir="${container_workdir}/client"
+    container_upload_fixture="${container_workdir}/${cli_uploaded_file}"
     container_download="${container_workdir}/${web_uploaded_file}"
-    container_gfarm_http="${container_source_dir}/gfarm-http"
+    container_gfarm_http="${container_client_source_dir}/gfarm-http"
 }
 
 # ---- Preparation: not tests; a failure here stops the run ----------------
@@ -222,14 +232,15 @@ prepare_gfarm_http() {
 
     echo "[PREP] ${docker_dist_client} container: copy client sources from the" \
         "mounted checkout and build gfarm-http..."
-    docker_dist_exec mkdir -p "${container_source_dir}"
+    docker_dist_exec mkdir -p "${container_client_source_dir}"
     container_workdir_created=true
-    docker_dist_exec cp -a "${container_checkout_client}/." "${container_source_dir}/"
+    docker_dist_exec cp -a "${container_checkout_client}/." "${container_client_source_dir}/"
     # The client test script resolves ../gfarm-http from client/test; build
     # here so it cannot pick up a stale ignored binary from the container.
-    build_cmd="cd '${container_source_dir}' &&"
+    build_cmd="cd '${container_client_source_dir}' &&"
     build_cmd+=" go build -o '${container_gfarm_http}' ./cmd/gfarm-http"
     docker_dist_exec sh -c "${build_cmd}"
+    log_client_workdir "after gfarm-http build"
 }
 
 prepare_playwright_image() {
@@ -337,7 +348,7 @@ prepare_cli_credential() {
 }
 
 prepare_cli_credential_if_needed() {
-    if client whoami >/dev/null 2>&1; then
+    if api_cli whoami >/dev/null 2>&1; then
         echo "[PREP] ${docker_dist_client} container: reuse active jwt-agent credential."
     else
         echo "[PREP] ${docker_dist_client} container: gfarm-http credential check" \
@@ -363,7 +374,7 @@ prepare_test_root() {
     docker_dist_exec gfchmod 1777 /tmp || :
     echo "[PREP] Gfarm: create test directory ${gfarm_test_root} via gfarm-http" \
         "in ${docker_dist_client}..."
-    client mkdir "${gfarm_test_root}"
+    api_cli mkdir "${gfarm_test_root}"
     gfarm_test_root_created=true
 }
 
@@ -492,38 +503,40 @@ seed_webui_operations() {
         echo "[PREP] Gfarm: create this Web UI case's fixtures via gfarm-http" \
             "in ${docker_dist_client}..."
     fi
-    client mkdir -p "${gfarm_test_directory}"
+    api_cli mkdir -p "${gfarm_test_directory}"
     for fixture in "${!fixture_paths[@]}"; do
         if [[ "${fixture}" == */ ]]; then
-            client mkdir -p "${gfarm_test_directory}/${fixture%/}"
+            api_cli mkdir -p "${gfarm_test_directory}/${fixture%/}"
         fi
     done
     for fixture in "${!fixture_paths[@]}"; do
         [[ "${fixture}" == */ ]] && continue
         if [[ "${fixture}" == */* ]]; then
-            client mkdir -p "${gfarm_test_directory}/${fixture%/*}"
+            api_cli mkdir -p "${gfarm_test_directory}/${fixture%/*}"
         fi
         if [[ "${copied_fixture}" == false ]]; then
-            docker cp "${host_fixture}" "${docker_dist_client}:${container_source}"
+            log_client_workdir "before Web UI fixture copy"
+            docker cp "${host_fixture}" "${docker_dist_client}:${container_upload_fixture}"
             copied_fixture=true
         fi
-        client upload "${container_source}" "${gfarm_test_directory}/${fixture}"
+        api_cli upload "${container_upload_fixture}" "${gfarm_test_directory}/${fixture}"
     done
 }
 
 seed_webui_login_upload() {
     echo "[PREP] Gfarm: upload CLI fixture from ${docker_dist_client} to" \
         "${gfarm_login_upload_directory}..."
-    docker cp "${host_fixture}" "${docker_dist_client}:${container_source}"
-    client mkdir "${gfarm_login_upload_directory}"
-    client upload "${container_source}" \
+    log_client_workdir "before selected Web UI login fixture copy"
+    docker cp "${host_fixture}" "${docker_dist_client}:${container_upload_fixture}"
+    api_cli mkdir "${gfarm_login_upload_directory}"
+    api_cli upload "${container_upload_fixture}" \
         "${gfarm_login_upload_directory}/${cli_uploaded_file}"
 }
 
 verify_webui_upload() {
     echo "  - Gfarm -> ${docker_dist_client} container -> Docker host: download" \
         "Web UI upload with gfarm-http and compare with local fixture..."
-    client download \
+    api_cli download \
         "${gfarm_login_upload_directory}/${web_uploaded_file}" \
         "${container_download}"
     docker cp "${docker_dist_client}:${container_download}" "${host_download}"
@@ -560,7 +573,7 @@ run_selected_webui_case() {
 test_cli_operations() {
     echo "  - ${docker_dist_client} container: run client/test/gfarm-http-test.sh..."
     docker_dist_exec --env "GFARM_HTTP_URL=${gateway_url}" \
-        sh -c "cd '${container_source_dir}' && ./test/gfarm-http-test.sh /tmp"
+        sh -c "cd '${container_client_source_dir}' && ./test/gfarm-http-test.sh /tmp"
 }
 
 # [Web UI] Keycloak login, a file uploaded by the CLI is listed, and a Web UI
@@ -571,9 +584,10 @@ test_webui_login_and_upload() {
 
     echo "  - Gfarm: upload CLI fixture from ${docker_dist_client} to" \
         "${gfarm_dir}..."
-    docker cp "${host_fixture}" "${docker_dist_client}:${container_source}"
-    client mkdir "${gfarm_dir}"
-    client upload "${container_source}" "${gfarm_dir}/${cli_uploaded_file}"
+    log_client_workdir "before Web UI login fixture copy"
+    docker cp "${host_fixture}" "${docker_dist_client}:${container_upload_fixture}"
+    api_cli mkdir "${gfarm_dir}"
+    api_cli upload "${container_upload_fixture}" "${gfarm_dir}/${cli_uploaded_file}"
 
     echo "  - Playwright container: log in to Web UI, check the CLI file, and" \
         "upload a file via docker/dist Gateway..."
@@ -596,7 +610,7 @@ test_webui_login_and_upload() {
 
     echo "  - Gfarm -> ${docker_dist_client} container -> Docker host: download" \
         "Web UI upload with gfarm-http and compare with local fixture..."
-    client download "${gfarm_dir}/${web_uploaded_file}" "${container_download}"
+    api_cli download "${gfarm_dir}/${web_uploaded_file}" "${container_download}"
     docker cp "${docker_dist_client}:${container_download}" "${host_download}"
     cmp "${host_fixture}" "${host_download}"
 }
