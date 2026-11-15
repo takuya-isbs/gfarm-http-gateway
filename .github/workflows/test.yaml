@@ -9,16 +9,58 @@ on:
   pull_request:
 
 jobs:
-  unit-test:
-    # Keep ubuntu-latest so future Ubuntu updates expose compatibility problems across the CI checks.
+  # Resolve the latest Python dependencies once; every later job installs this exact set.
+  prepare-requirements:
+    name: Freeze Python requirements
     permissions:
-      contents: write
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: checkout
         uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
         with:
-          fetch-depth: 0
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 26
+
+      - name: Install latest Python dependencies
+        working-directory: server
+        run: make setup-latest
+
+      - name: Freeze Python dependencies
+        working-directory: server
+        run: make freeze
+
+      - name: Upload frozen requirements
+        uses: actions/upload-artifact@v7
+        with:
+          name: frozen-requirements
+          path: server/requirements.txt
+          if-no-files-found: error
+
+  unit-test:
+    name: unit test
+    needs:
+      - prepare-requirements
+    # Keep ubuntu-latest so future Ubuntu updates expose compatibility problems across the CI checks.
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: Download frozen requirements
+        uses: actions/download-artifact@v4
+        with:
+          name: frozen-requirements
+          path: server
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -43,9 +85,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      - name: Run setup-latest
+      - name: Install tested Python dependencies
         working-directory: server
-        run: make setup-latest
+        run: make setup
 
       - name: Install Playwright browsers
         working-directory: server
@@ -62,39 +104,10 @@ jobs:
           name: playwright-report
           path: ./server/frontend/app/react-app/playwright-report/
 
-      - name: Update requirements.txt
-        working-directory: server
-        run: make freeze
-
-      - name: Check for changes (for requirements.txt)
-        working-directory: server
-        id: check_changes
-        # https://docs.github.com/ja/actions/writing-workflows/choosing-what-your-workflow-does/passing-information-between-jobs
-        run: |
-          git status --porcelain
-          if [[ -n "$(git status --porcelain)" ]]; then
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      # Do not commit or push generated requirements.txt changes for pull_request events.
-      - name: Commit files (for requirements.txt)
-        working-directory: server
-        if: github.event_name == 'push' && steps.check_changes.outputs.has_changes == 'true'
-        run: |
-          git config --local user.email "${{ github.event.pusher.email }}"
-          git config --local user.name "github-actions(by ${{ github.event.pusher.name }})"
-          git commit -a -m "(GitHub Actions) update requirements.txt"
-      # https://github.com/ad-m/github-push-action
-      - name: Push changes (for requirements.txt)
-        if: github.event_name == 'push' && steps.check_changes.outputs.has_changes == 'true'
-        uses: ad-m/github-push-action@master
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ github.ref }}
-          force: false
-
   docker-dist-integration:
     name: docker/dist integration
+    needs:
+      - prepare-requirements
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
@@ -112,20 +125,12 @@ jobs:
         with:
           path: gfarm/gfarm-http-gateway
 
-      - name: Set up Python
-        uses: actions/setup-python@v7
+      # The Gateway image installs the frozen requirements.txt from this build context.
+      - name: Download frozen requirements
+        uses: actions/download-artifact@v4
         with:
-          python-version: "3.12"
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: 26
-
-      - name: Install development dependencies and freeze runtime requirements
-        run: |
-          make -C gfarm/gfarm-http-gateway/server setup-latest
-          make -C gfarm/gfarm-http-gateway/server freeze
+          name: frozen-requirements
+          path: gfarm/gfarm-http-gateway/server
 
       - name: Get Docker build user
         id: user
@@ -225,3 +230,54 @@ jobs:
         with:
           name: docker-dist-integration-logs
           path: ${{ runner.temp }}/docker-dist-logs/
+
+  update-requirements:
+    name: Update Python requirements
+    needs:
+      - prepare-requirements
+      - unit-test
+      - docker-dist-integration
+    if: github.event_name == 'push' && github.ref_type == 'branch'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Download tested requirements
+        uses: actions/download-artifact@v4
+        with:
+          name: frozen-requirements
+          path: ${{ runner.temp }}/frozen-requirements
+
+      - name: Apply tested requirements
+        run: cp "${RUNNER_TEMP}/frozen-requirements/requirements.txt" server/requirements.txt
+
+      - name: Commit requirements.txt
+        id: commit
+        run: |
+          git add server/requirements.txt
+          if git diff --cached --quiet -- server/requirements.txt; then
+            echo "requirements.txt is unchanged."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          # [skip ci] prevents the bot commit from triggering this workflow again.
+          # https://docs.github.com/ja/actions/how-tos/manage-workflow-runs/skip-workflow-runs
+          git commit -m "(GitHub Actions) update requirements.txt [skip ci]"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Push requirements.txt
+        if: steps.commit.outputs.changed == 'true'
+        run: |
+          # Push is rejected (non-fast-forward) when the branch moved after the tests started.
+          # Fail with a clear message; the next push re-runs the tests and this job.
+          if ! git push origin "HEAD:${GITHUB_REF_NAME}"; then
+            echo "::error::Failed to push requirements.txt. The branch may have advanced after the tests started; re-run after the new push's tests complete." >&2
+            exit 1
+          fi

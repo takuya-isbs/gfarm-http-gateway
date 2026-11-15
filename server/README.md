@@ -964,9 +964,12 @@ versions actually used in `requirements.txt`.
 
 ### To update requirements.txt for latest
 
-GitHub Actions automatically runs the tests and updates `requirements.txt` when
-the installed Python packages differ from the committed file. However, the
-recommended procedure is to update and test the file locally before pushing:
+GitHub Actions freezes the latest Python packages once, runs the unit and
+docker/dist integration test jobs against that frozen set, then updates
+`requirements.txt` when it differs from the committed file. The update runs only
+for push events and only after both test jobs succeed.
+However, the recommended procedure is to update and test the file locally before
+pushing:
 
 ```
 make setup-latest
@@ -992,9 +995,13 @@ See `Update packages` in [frontend/app/react-app/README.md](./frontend/app/react
 ### GitHub Actions
 
 - See: `../.github/workflows/`
-- See: <https://github.com/ad-m/github-push-action?tab=readme-ov-file#requirements-and-prerequisites>
-  - (Requirements and Prerequisites)
-  - `Read and write permissions` for Actions is required
-- After the tests, Actions runs `make freeze` and automatically commits and pushes `requirements.txt` when it has changed.
+- The `prepare-requirements` job runs `make setup-latest` and `make freeze`, then uploads the frozen `requirements.txt` as the `frozen-requirements` artifact.
+- The `unit-test` job waits for `prepare-requirements`, then installs the frozen `requirements.txt` with `make setup` instead of resolving the latest versions again.
+- The `docker-dist-integration` job waits for `prepare-requirements` and downloads the frozen `requirements.txt` into the Gateway build context. The Gateway image installs it; the job itself does not install Python or Node.js.
+- The requirements update job waits for `prepare-requirements`, `unit-test`, and `docker-dist-integration` to succeed, then commits and pushes only `server/requirements.txt` when it has changed.
+- Pull request events do not commit or push the generated requirements file.
+- The bot commit message contains `[skip ci]`, so the push it makes does not start another run. See [Skipping workflow runs](https://docs.github.com/ja/actions/how-tos/manage-workflow-runs/skip-workflow-runs).
+- Because the skipped run leaves its checks pending, a pull request whose head is this bot commit cannot merge until a new commit is pushed to the branch.
+- If the push is rejected because the branch moved after the tests started, the job fails with an error annotation. Nothing is retried; the newer push runs its own tests and update job.
 - If `requirements.txt` was updated and pushed locally first, the Actions update step should make no additional change.
 - `requirements.txt` may be updated, committed, and pushed automatically on GitHub, so `git pull` on your working directory may be required after `git push`.
