@@ -7,7 +7,7 @@ services:
     # for Run with a Subpath
     # command: --host 0.0.0.0 --port 8080 --root-path /gfarm
     volumes:
-      # Required: Gfarm HTTP gateway config
+      # Required: gfarm-http-gateway configuration
       - ./config/gfarm-http-gateway-for-HPCI.conf:/config/gfarm-http-gateway.conf:ro
       # Required: Gfarm config
       - ./config/gfarm2.conf:/config/gfarm2.conf:ro
@@ -18,6 +18,10 @@ services:
     depends_on:
       - redis
     restart: unless-stopped
+    networks:
+      default:
+        aliases:
+          - http-gw
 
   gfarm-http-gateway-sub:
     build:
@@ -26,7 +30,7 @@ services:
     # for Run with a Subpath
     command: --host 0.0.0.0 --port 8080 --root-path /sub --forwarded-allow-ips="*"
     volumes:
-      # Required: Gfarm HTTP gateway config
+      # Required: gfarm-http-gateway configuration
       - ./config/gfarm-http-gateway-for-HPCI-sub.conf:/config/gfarm-http-gateway.conf:ro
       # Required: Gfarm config
       - ./config/gfarm2.conf:/config/gfarm2.conf:ro
@@ -37,6 +41,10 @@ services:
     depends_on:
       - redis
     restart: unless-stopped
+    networks:
+      default:
+        aliases:
+          - http-gw-sub
 
   nginx-proxy:
     container_name: nginx-proxy

@@ -4,7 +4,7 @@ set -Eeuo pipefail
 # Integration test of gfarm-http-gateway against the docker/dist Gfarm services.
 #
 # Usage: see the docker/dist/http-gateway/README.md in the Gfarm repository.
-# The docker/dist services (Gateway, Keycloak, JWT Server, gfarm-c1) must be
+# The docker/dist services (http-gw, Keycloak, JWT Server, gfarm-c1) must be
 # running before this script is started.
 #
 # Path variables are prefixed by where the path exists:
@@ -25,7 +25,7 @@ docker_dist_user=${DOCKER_DIST_USER:-${USER:-$(id -un)}}
 docker_host_user=${USER:-$(id -un)}
 container_checkout_client="/home/${docker_host_user}/gfarm/$(basename "${gateway_root}")/client"
 docker_dist_workdir="/home/${docker_host_user}/gfarm/docker/dist"
-gateway_url=${GFARM_HTTP_GATEWAY_URL:-http://gfarm-http-gateway-http:8000}
+gateway_url=${GFARM_HTTP_GATEWAY_URL:-http://http-gw:8000}
 test_username=${GFARM_HTTP_TEST_USERNAME:-user1}
 test_password=${GFARM_HTTP_TEST_PASSWORD:-}
 test_image=${PLAYWRIGHT_DOCKER_IMAGE:-${default_test_image}}
@@ -602,7 +602,7 @@ test_webui_login_and_upload() {
     api_cli upload "${container_upload_fixture}" "${gfarm_dir}/${cli_uploaded_file}"
 
     echo "  - Playwright container: log in to Web UI, check the CLI file, and" \
-        "upload a file via docker/dist Gateway..."
+        "upload a file via docker/dist http-gw..."
     docker run --rm --init --ipc=host \
         --network "${docker_dist_network}" \
         --volume "${host_react_app_copy}:${playwright_container_app_dir}:ro" \
@@ -633,7 +633,7 @@ test_webui_operations() {
     seed_webui_operations all
 
     echo "  - Playwright container: run Web UI cases against the real" \
-        "docker/dist Gateway and Gfarm..."
+        "docker/dist http-gw and Gfarm..."
     docker run --rm --init --ipc=host \
         --network "${docker_dist_network}" \
         --volume "${host_react_app_copy}:${playwright_container_app_dir}:ro" \

@@ -99,7 +99,7 @@ Create directories and files in your current working directory:
 ```
 config/
 ├── gfarm2.conf              # Gfarm client configuration (required)
-├── gfarm-http-gateway.conf  # Gateway configuration (required)
+├── gfarm-http-gateway.conf  # gfarm-http-gateway configuration (required)
 ├── certs/                   # Gfarm CA certificates (required)
 └── dev_ca.crt               # (Optional) Custom CA certificate (for development)
 
@@ -127,7 +127,7 @@ redis/
     auth disable sharedsecret *
     ```
 
-  - Do not set `sasl_mechanisms` or `sasl_user` in `gfarm2.conf`; the gateway
+  - Do not set `sasl_mechanisms` or `sasl_user` in `gfarm2.conf`; gfarm-http-gateway
     sets the SASL mechanism and user for each request.
 
 #### 3. Run the Redis container
@@ -446,7 +446,7 @@ This example uses the following files:
 
 See [Start gfarm-http-gateway with an alternative system](#start-gfarm-http-gateway-with-an-alternative-system) and run Docker Compose with `docker-compose-for-HPCI-dev-with-sub.yaml`.
 
-- **After login:** In this example you **always** access the gateway via a subpath. The IdP redirects to `http://localhost:8080/` with the access token. You must append the required subpath **after** `http://localhost:8080/` (e.g., `http://localhost:8080/main/...`, `http://localhost:8080/sub/...`) so that the subpath instance of gfarm-http-gateway picks up the token. If you land on `/` and see a 404, just add the subpath; you don’t need to sign in again.
+- **After login:** In this example you **always** access gfarm-http-gateway via a subpath. The IdP redirects to `http://localhost:8080/` with the access token. You must append the required subpath **after** `http://localhost:8080/` (e.g., `http://localhost:8080/main/...`, `http://localhost:8080/sub/...`) so that the subpath instance of gfarm-http-gateway picks up the token. If you land on `/` and see a 404, just add the subpath; you don’t need to sign in again.
 
 
 ## Update gfarm-http-gateway and Gfarm client with Docker
@@ -587,17 +587,17 @@ docker compose up -d
 - **OpenID Connect provider**
   - Prepare the following values from your IdP (e.g., Keycloak):
     - Client ID and client secret
-  - Register the gateway's browser-facing callback URI in the client's **Valid Redirect URIs**. Use the public URL that users enter in their browsers, including the scheme, hostname, port, and any reverse-proxy path prefix. Do not use an internal container hostname unless that is also the browser-facing URL.
+  - Register the gfarm-http-gateway browser-facing callback URI in the client's **Valid Redirect URIs**. Use the public URL that users enter in their browsers, including the scheme, hostname, port, and any reverse-proxy path prefix. Do not use an internal container hostname unless that is also the browser-facing URL.
   - With the example public base URL `https://gateway.example.org/gfarm`:
 
-    | Gateway setting | Callback URI to register |
+    | gfarm-http-gateway setting | Callback URI to register |
     |---|---|
     | `GFARM_HTTP_OIDC_REDIRECT_URI_PAGE=index` (default) | `https://gateway.example.org/gfarm/` |
     | `GFARM_HTTP_OIDC_REDIRECT_URI_PAGE=auth` | `https://gateway.example.org/gfarm/auth` |
     | Non-empty `GFARM_HTTP_OIDC_OVERRIDE_REDIRECT_URI` | The exact URI configured in this variable |
 
-  - The post-logout redirect is separate from the login callback. It returns the browser to the gateway's `/logout` endpoint after the identity provider completes logout; the gateway then clears its local session and returns to the login page. For the example base URL, register `https://gateway.example.org/gfarm/logout` in **Valid Post Logout Redirect URIs**. The gateway adds a changing `state` query parameter to this URI, so register the stable URI path without a query string.
-  - In Keycloak, open the target realm, select **Clients**, open the gateway client, and add the login callback to **Valid Redirect URIs** and the post-logout URI to **Valid Post Logout Redirect URIs**. Save the client settings. Use exact host and path entries in production; avoid broad wildcards such as `*`.
+  - The post-logout redirect is separate from the login callback. It returns the browser to the gfarm-http-gateway `/logout` endpoint after the identity provider completes logout; gfarm-http-gateway then clears its local session and returns to the login page. For the example base URL, register `https://gateway.example.org/gfarm/logout` in **Valid Post Logout Redirect URIs**. gfarm-http-gateway adds a changing `state` query parameter to this URI, so register the stable URI path without a query string.
+  - In Keycloak, open the target realm, select **Clients**, open the gfarm-http-gateway client, and add the login callback to **Valid Redirect URIs** and the post-logout URI to **Valid Post Logout Redirect URIs**. Save the client settings. Use exact host and path entries in production; avoid broad wildcards such as `*`.
 
 ### Prepare Configuration
 
@@ -997,7 +997,7 @@ See `Update packages` in [frontend/app/react-app/README.md](./frontend/app/react
 - See: `../.github/workflows/`
 - The `prepare-requirements` job runs `make setup-latest` and `make freeze`, then uploads the frozen `requirements.txt` as the `frozen-requirements` artifact.
 - The `unit-test` job waits for `prepare-requirements`, then installs the frozen `requirements.txt` with `make setup` instead of resolving the latest versions again.
-- The `docker-dist-integration` job waits for `prepare-requirements` and downloads the frozen `requirements.txt` into the Gateway build context. The Gateway image installs it; the job itself does not install Python or Node.js.
+- The `docker-dist-integration` job waits for `prepare-requirements` and downloads the frozen `requirements.txt` into the gfarm-http-gateway build context. The gfarm-http-gateway image installs it; the job itself does not install Python or Node.js.
 - The requirements update job waits for `prepare-requirements`, `unit-test`, and `docker-dist-integration` to succeed, then commits and pushes only `server/requirements.txt` when it has changed.
 - Pull request events do not commit or push the generated requirements file.
 - The bot commit message contains `[skip ci]`, so the push it makes does not start another run. See [Skipping workflow runs](https://docs.github.com/ja/actions/how-tos/manage-workflow-runs/skip-workflow-runs).

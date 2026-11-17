@@ -17,7 +17,7 @@ if [ -d /config/certs ] && compgen -G "/config/certs/*" > /dev/null; then
     mkdir -p /etc/pki/tls/certs/gfarm
     cp -u /config/certs/* /etc/pki/tls/certs/gfarm/
 elif [ -d /config/certs ]; then
-    echo "[ERROR] No Gfarm CA certificates found in /config/certs; populate this mounted directory before starting the Gateway" >&2
+    echo "[ERROR] No Gfarm CA certificates found in /config/certs; populate this mounted directory before starting http-gw" >&2
     exit 1
 else
     echo "[WARN] /config/certs not found"
@@ -51,7 +51,7 @@ if [ -f /config/dev_ca.crt ]; then
     export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 fi
 
-# Launch gateway
+# Launch http-gw
 echo "[INFO] Launching gfarm-http-gateway..."
 if [ -n "${REQUESTS_CA_BUNDLE:-}" ]; then
     exec env REQUESTS_CA_BUNDLE="$REQUESTS_CA_BUNDLE" \

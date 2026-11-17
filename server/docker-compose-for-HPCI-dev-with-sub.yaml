@@ -5,7 +5,7 @@ services:
     container_name: gfarm-http-gateway
     command: --host 0.0.0.0 --port 8080 --root-path /main --forwarded-allow-ips="*"
     volumes:
-      # Required: Gfarm HTTP gateway config
+      # Required: gfarm-http-gateway configuration
       - ./gfarm-http-gateway-for-HPCI-dev.conf:/config/gfarm-http-gateway.conf:ro
       # Required: Gfarm config
       - ./config/gfarm2.conf:/config/gfarm2.conf:ro
@@ -16,6 +16,10 @@ services:
     depends_on:
       - redis
     restart: unless-stopped
+    networks:
+      default:
+        aliases:
+          - http-gw
 
   gfarm-http-gateway-sub:
     build:
@@ -23,7 +27,7 @@ services:
     container_name: gfarm-http-gateway-sub
     command: --host 0.0.0.0 --port 8080 --root-path /sub --forwarded-allow-ips="*"
     volumes:
-      # Required: Gfarm HTTP gateway config
+      # Required: gfarm-http-gateway configuration
       - ./gfarm-http-gateway-for-HPCI-dev-sub.conf:/config/gfarm-http-gateway.conf:ro
       # Required: Gfarm config
       - ./config/gfarm2.conf:/config/gfarm2.conf:ro
@@ -34,6 +38,10 @@ services:
     depends_on:
       - redis
     restart: unless-stopped
+    networks:
+      default:
+        aliases:
+          - http-gw-sub
 
   nginx-proxy:
     container_name: nginx-proxy

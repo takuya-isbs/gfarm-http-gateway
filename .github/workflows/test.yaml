@@ -125,7 +125,7 @@ jobs:
         with:
           path: gfarm/gfarm-http-gateway
 
-      # The Gateway image installs the frozen requirements.txt from this build context.
+      # The gfarm-http-gateway image installs the frozen requirements.txt from this build context.
       - name: Download frozen requirements
         uses: actions/download-artifact@v7
         with:
@@ -208,23 +208,23 @@ jobs:
           docker compose -f gfarm/docker/dist/jwt-server/docker-compose.yaml \
             up -d jwt-server-front
 
-      - name: Copy Gfarm CA certificates to Gateway
+      - name: Copy Gfarm CA certificates to http-gw
         run: make -C gfarm/docker/dist/http-gateway setup
 
-      # The gateway image is built by the bake step above, so start without building.
-      - name: Start Gateway
+      # The http-gw image is built by the bake step above, so start without building.
+      - name: Start http-gw
         run: make -C gfarm/docker/dist/http-gateway up-nobuild
 
-      - name: Wait for Gateway
+      - name: Wait for http-gw
         run: |
           for attempt in $(seq 1 60); do
             if docker exec gfarm-c1 curl --fail --silent \
-              http://gfarm-http-gateway-http:8000/openapi.json >/dev/null; then
+              http://http-gw:8000/openapi.json >/dev/null; then
               exit 0
             fi
             sleep 2
           done
-          echo "Gateway did not become ready within 120 seconds." >&2
+          echo "http-gw did not become ready within 120 seconds." >&2
           exit 1
 
       - name: Run real-Gfarm integration test
@@ -242,7 +242,7 @@ jobs:
             > "$RUNNER_TEMP/docker-dist-logs/jwt-server-compose.log" 2>&1 || true
           docker compose --env-file gfarm/docker/dist/http-gateway/.env \
             -f gfarm/docker/dist/http-gateway/docker-compose.yaml logs --no-color \
-            > "$RUNNER_TEMP/docker-dist-logs/gateway-compose.log" 2>&1 || true
+            > "$RUNNER_TEMP/docker-dist-logs/http-gw-compose.log" 2>&1 || true
           docker exec gfarm-c1 journalctl -b -n 1000 --no-pager \
             > "$RUNNER_TEMP/docker-dist-logs/gfarm-c1-journal.log" 2>&1 || true
 

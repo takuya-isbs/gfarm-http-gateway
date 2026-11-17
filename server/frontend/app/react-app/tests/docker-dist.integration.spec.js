@@ -27,7 +27,7 @@ test("real Keycloak login and Gfarm file sharing with gfarm-http", async ({ page
     await page.locator("#username").fill(username);
     await page.locator("#password").fill(password);
     await page.locator("#kc-login").click();
-    // Wait until Keycloak has redirected back to the gateway and the login
+    // Wait until Keycloak has redirected back to http-gw and the login
     // page is gone, so the next navigation does not interrupt the login.
     await page.waitForURL(
         (url) => url.origin === new URL(gatewayURL).origin && !url.pathname.startsWith("/login")

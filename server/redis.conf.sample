@@ -10,7 +10,7 @@ appendfsync always
 auto-aof-rewrite-min-size 32mb
 auto-aof-rewrite-percentage 100
 
-# Optional password (only if your gateway supports Redis auth)
+# Optional password (only if http-gw supports Redis auth)
 # requirepass change-me
 
 

@@ -4,14 +4,14 @@ services:
       context: .
     container_name: gfarm-http-gateway
     # NOTE: Set --forwarded-allow-ips to the reverse-proxy container IP on the Compose network (or comma-separated list).
-    #       Use "*" only if the gateway is never reachable directly; ensure the gateway port is not exposed or reachable.
+    #       Use "*" only if http-gw is never reachable directly; ensure its port is not exposed or reachable.
     command: --host 0.0.0.0 --port 8000 --forwarded-allow-ips="*"
     # for Run with a Subpath
     # command: --host 0.0.0.0 --port 8000 --forwarded-allow-ips="*" --root-path /gfarm
     volumes:
       # Required: Gfarm config
       - ./config/gfarm2.conf:/config/gfarm2.conf:ro
-      # Required: Gfarm HTTP gateway config
+      # Required: gfarm-http-gateway configuration
       - ./config/gfarm-http-gateway.conf:/config/gfarm-http-gateway.conf:ro
       # Required: CA certs for Gfarm
       - ./config/certs:/config/certs:ro
@@ -20,6 +20,10 @@ services:
     depends_on:
       - redis
     restart: unless-stopped
+    networks:
+      default:
+        aliases:
+          - http-gw
 
 redis:
   image: redis
@@ -31,7 +35,7 @@ redis:
     # Expected files:
     #   - ca.crt            : CA certificate that signed redis.crt (and client certs for mTLS)
     #   - redis.{crt,key}   : Server certificate/key for Redis (SAN should include "redis")
-    #   - client.{crt,key}  : (Optional, mTLS) Client certificate/key used by the gateway
+    #   - client.{crt,key}  : (Optional, mTLS) Client certificate/key used by http-gw
     # - ./redis/certs:/certs:ro
     # Optional: Persistent data directory.
     - redis-data:/data

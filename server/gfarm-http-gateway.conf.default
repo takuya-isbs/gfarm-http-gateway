@@ -14,7 +14,7 @@ GFARM_HTTP_ORIGINS="http://localhost:8000,http://localhost:8080"
 # GFARM_HTTP_TMPDIR
 # Temporary directory to store token files for long-term exec (gfptar).
 # Token files are removed after gfptar finishes.
-# The gateway cleans up this directory when it starts.
+# http-gw cleans up this directory when it starts.
 GFARM_HTTP_TMPDIR="/tmp/gfarm-http-gateway"
 
 # ========================================
@@ -219,7 +219,7 @@ GFARM_HTTP_REDIS_SSL_KEYFILE=
 GFARM_HTTP_REDIS_SSL_CA_CERTS=
 
 # GFARM_HTTP_REDIS_ID_PREFIX (optional)
-#   Prefix added to all Redis keys created by the gateway.
+#   Prefix added to all Redis keys created by http-gw.
 #   Useful when multiple apps share a Redis instance.
 #   ex.: GFARM_HTTP_REDIS_ID_PREFIX=gfarm
 GFARM_HTTP_REDIS_ID_PREFIX=
