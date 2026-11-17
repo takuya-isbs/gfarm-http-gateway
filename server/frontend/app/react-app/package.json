@@ -16,14 +16,14 @@
     "build": "vite build --mode production",
     "lint": "eslint ./src tests playwright*.config.js --ext .js,.jsx && prettier --check \"tests/**/*.js\" playwright*.config.js",
     "lint:fix": "eslint ./src --ext .js,.jsx --fix",
-    "e2e:all": "playwright test",
-    "e2e:chromium": "playwright test --project=chromium",
-    "e2e:firefox": "playwright test --project=firefox",
-    "e2e:webkit": "playwright test --project=webkit",
-    "e2e:ui": "playwright test --project=chromium --ui",
-    "e2e:ui:firefox": "playwright test --project=firefox --ui",
-    "e2e:ui:webkit": "playwright test --project=webkit --ui",
-    "e2e:headed": "playwright test --project=chromium --headed"
+    "test:unit-webui:all": "playwright test",
+    "test:unit-webui:chromium": "playwright test --project=chromium",
+    "test:unit-webui:firefox": "playwright test --project=firefox",
+    "test:unit-webui:webkit": "playwright test --project=webkit",
+    "test:unit-webui:chromium:ui": "playwright test --project=chromium --ui",
+    "test:unit-webui:firefox:ui": "playwright test --project=firefox --ui",
+    "test:unit-webui:webkit:ui": "playwright test --project=webkit --ui",
+    "test:unit-webui:chromium:headed": "playwright test --project=chromium --headed"
   },
   "eslintConfig": {
     "extends": [

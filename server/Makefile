@@ -1,8 +1,8 @@
-test: test-unit test-flake8 test-playwright
+test: test-unit test-flake8 test-unit-webui-chromium
 
-test-all: test-unit test-flake8 test-playwright test-client
+test-all: test-unit test-flake8 test-unit-webui-chromium test-client
 
-.PHONY: lint lint-python lint-frontend test-flake8
+.PHONY: test test-all test-unit-webui-chromium test-unit-webui-all lint lint-python lint-frontend test-flake8
 
 lint: lint-python lint-frontend
 
@@ -29,11 +29,11 @@ test-client:
 test-flake8:
 	./venv/bin/flake8 api
 
-test-playwright:
-	npm --prefix frontend/app/react-app run e2e:chromium
+test-unit-webui-chromium:
+	npm --prefix frontend/app/react-app run test:unit-webui:chromium
 
-test-playwright-all:
-	npm --prefix frontend/app/react-app run e2e:all
+test-unit-webui-all:
+	npm --prefix frontend/app/react-app run test:unit-webui:all
 
 setup setup-freezed:
 	INSTALL_SYS_PACKAGES=0 ./setup.sh

@@ -923,7 +923,8 @@ Set up the environment in `server/` before running them:
   - `make test-unit` - run API unit tests with pytest and display coverage.
   - `make test-coverage` - run API unit tests and display uncovered lines.
   - `make test-flake8` - run style checks with flake8.
-  - `make test-playwright` - run Web UI end-to-end tests with Playwright (must be installed).
+  - `make test-unit-webui-chromium` - run the API-mocked Web UI Playwright tests in Chromium.
+  - `make test-unit-webui-all` - run the API-mocked Web UI Playwright tests in all configured browsers.
 
 #### View the Playwright HTML report
 
@@ -939,16 +940,9 @@ npx --prefix frontend/app/react-app playwright show-report \
 When c2 is accessible through Squid, open <http://c2:9323/> in a browser. Stop
 the temporary report server with `Ctrl+C` after viewing the report.
 
-### Integration test with docker/dist
+### Real-Gfarm E2E test with docker/dist
 
-The integration test `bin/test-http-gateway-docker-dist.sh` is not part of `make test` above. It needs the Gfarm services of `docker/dist` (for example, on c1 or c2 in that environment), and it is started from the Gfarm repository on the Docker host:
-
-```
-cd <Gfarm source checkout>/docker/dist/http-gateway
-GFARM_HTTP_TEST_PASSWORD=... make test
-```
-
-See `docker/dist/http-gateway/README.md` in the Gfarm repository for the prerequisites and variables.
+The docker/dist E2E suite is not part of `make test` above. Its purpose, commands, and case selection are documented in the repository root README under **Test against a real Gfarm**. Follow the Gfarm repository's `docker/dist/http-gateway/README.md` to prepare the services.
 
 ### To pin Python package versions
 

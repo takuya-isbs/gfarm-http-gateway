@@ -42,7 +42,9 @@ npm run lint      # Check code
 npm run lint:fix  # Auto-fix issues
 ```
 
-### End-to-End Tests (Playwright)
+### Web UI tests (Playwright)
+
+These tests exercise the Web UI with mocked API responses; they do not access live Gfarm services. Use the `docker/dist` integration test for the real-Gfarm E2E flow.
 
 Install Playwright and the Chromium browser used by the standard test target:
 ```bash
@@ -55,22 +57,22 @@ To run all configured browser projects, install all browsers instead:
 npx playwright install --with-deps
 ```
 
-Run all tests:
+Run the Web UI tests in all configured browsers:
 
 ```bash
-npm run e2e:all
+npm run test:unit-webui:all
 ```
 
-Run in Chromium only:
+Run in Chromium only (the standard unit test target):
 
 ```bash
-npm run e2e:chromium
+npm run test:unit-webui:chromium
 ```
 
 Interactive test UI:
 
 ```bash
-npm run e2e:ui
+npm run test:unit-webui:chromium:ui
 ```
 ### Update packages
 

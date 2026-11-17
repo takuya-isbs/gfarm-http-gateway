@@ -34,7 +34,7 @@ test-api-coverage:
 		go test ./cmd/gfarm-http -count=1 \
 		-run '^TestAPIRequestsMatchServerOpenAPI$$' -v; \
 	cd "$(REACT_APP_DIR)"; \
-	GFARM_HTTP_API_COVERAGE_FILE="$(API_COVERAGE_FILE)" $(NPM) run e2e:chromium; \
+	GFARM_HTTP_API_COVERAGE_FILE="$(API_COVERAGE_FILE)" $(NPM) run test:unit-webui:chromium; \
 	cd "$(ROOT_DIR)"; \
 	GFARM_HTTP_OPENAPI_JSON="$$spec" "$(SERVER_PYTHON)" \
 		"$(API_COVERAGE_ANALYZER)" "$(API_COVERAGE_FILE)" \

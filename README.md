@@ -41,7 +41,7 @@ make test-unit-all
 
 This runs the server Python tests and coverage, Go client API/unit statement coverage, and CLI/Web UI OpenAPI request coverage. The Web UI tests use API mocks. No live Gfarm is required. OpenAPI coverage reports CLI, Web UI, and combined rates for operations, path/query parameters, and enum/boolean values; it lists missing items and fails below the checked-in baseline. API and code coverage remain separate metrics.
 
-`test-api-coverage` runs one Go OpenAPI request test to record CLI requests, then directly runs the same `npm run e2e:chromium` suite as `make -C server test-playwright` to record Web UI requests. `test-unit-all` runs `client test-coverage` and then the complete `test-api-coverage` target. The focused Go request test is repeated once to collect CLI request evidence; the Playwright suite runs once.
+`test-api-coverage` runs one Go OpenAPI request test to record CLI requests, then directly runs the same API-mocked Chromium Playwright suite as `make -C server test-unit-webui-chromium` to record Web UI requests. `test-unit-all` runs `client test-coverage` and then the complete `test-api-coverage` target. The focused Go request test is repeated once to collect CLI request evidence; the Playwright suite runs once.
 
 The Go coverage target selects tests named with the `TestAPI` and `TestUnit` prefixes. Keep new Go tests in one of these categories so `test-unit-all` includes them. To run the complete Go suite without category filtering, use `make -C client test-contract`.
 
@@ -54,11 +54,11 @@ Prerequisites:
 
 GitHub Actions runs `make ci` after installing these prerequisites. Run the same checks locally with `make ci`; Playwright uses CI mode with one worker in both environments. Direct `make test-unit-all` calls preserve the caller's CI setting.
 
-GitHub Actions also runs a real-Gfarm integration job in parallel with `make ci`:
+GitHub Actions also runs a real-Gfarm E2E job in parallel with `make ci`:
 
 - Checkout: Gfarm branch `feature/docker-dist-gfarm-http-gateway` under `gfarm/`; this repository under `gfarm/gfarm-http-gateway/`.
 - Services: Start the `docker/dist` Gfarm, Keycloak, JWT Server, and `gfarm-http-gateway`.
-- Test: Run the same `make -C docker/dist/http-gateway test` command used locally.
+- Test: Run the same `make -C docker/dist/http-gateway test-e2e` command used locally.
 - Failure logs: Upload service logs when the integration job fails.
 - After the Gfarm work branch is merged, switch the workflow checkout to the default branch.
 
@@ -70,17 +70,37 @@ Run only the local lint checks with `make lint`: Go formatting and `go vet`, Pyt
 | --- | --- | --- |
 | Go client | `client/` | `go test ./cmd/gfarm-http -run '^TestAPIChmodUsesPut$' -v` |
 | Server Python | `server/` | `./bin/gfarm-http-gateway-test.sh api/test/test_api_route_coverage.py -k test_analyze_coverage_counts_operations_parameters_and_values_per_client` |
-| Web UI | `server/frontend/app/react-app/` | `npm run e2e:chromium -- tests/download.test.js` |
+| Web UI | `server/frontend/app/react-app/` | `npm run test:unit-webui:chromium -- tests/download.test.js` |
 
 ### Test against a real Gfarm
 
-The real Gfarm tests are separate from `test-unit-all`:
+These checks use a real Gfarm. (The Web UI suite in `make test-unit-all` uses API mocks and does not require a live Gfarm.)
 
-- CLI through a configured `gfarm-http-gateway`: Run `make -C client test`. Configure `GFARM_HTTP_URL` and authentication, and ensure `/tmp` exists in Gfarm.
-- CLI and Web UI through the docker/dist `gfarm-http-gateway`: Set `GFARM_HTTP_TEST_PASSWORD` for the Keycloak test user, then run `make -C ../docker/dist/http-gateway test` from this repository root.
-- One docker/dist Web UI case: list titles with `make -C ../docker/dist/http-gateway list-webui-cases`, then set `GFARM_HTTP_WEBUI_CASE` to one exact title and run `make -C ../docker/dist/http-gateway test-webui`.
+Before running the full suite or a single docker/dist Web UI case, build and start the services by following `docker/dist/http-gateway/README.md` in the Gfarm checkout.
 
-The docker/dist stack must already be prepared. The full test creates and removes temporary Gfarm test data and refreshes c1's `jwt-agent`; a selected Web UI test reuses a valid agent credential when possible. See `docker/dist/http-gateway/README.md` in the Gfarm checkout for setup and operational details.
+> **Important:** Every `make test-e2e` run stops c1's existing `jwt-agent`, obtains a new passphrase from the JWT Server, and starts the agent again with it.
+
+- Gfarm client command (`gfarm-http`) through a configured `gfarm-http-gateway`: Configure `GFARM_HTTP_URL` and authentication, ensure `/tmp` exists in Gfarm, then run `make -C client test`. It removes its unique test directory on exit.
+- Full docker/dist suite: Run from this repository root with the Keycloak test user's password:
+
+  ```sh
+  GFARM_HTTP_TEST_PASSWORD=... make -C ../docker/dist/http-gateway test-e2e
+  ```
+
+- One docker/dist Web UI case:
+  - List case titles with `make -C ../docker/dist/http-gateway list-webui-cases`. Listing does not require the docker/dist services or a password.
+  - Run one listed title with the Keycloak test user's password:
+
+    ```sh
+    GFARM_HTTP_TEST_PASSWORD=... \
+    GFARM_HTTP_WEBUI_CASE='<exact title from the list>' \
+    make -C ../docker/dist/http-gateway test-webui
+    ```
+
+    This runs only the selected Web UI case.
+- Cache cleanup: Run `make -C ../docker/dist/http-gateway clean-test-cache` to remove the per-user Playwright dependency cache.
+
+A single Web UI case reuses a valid credential or refreshes it if needed. Each test run removes its unique temporary Gfarm directory. Runner implementation and fixture details are in `server/e2e-test/test-http-gateway-docker-dist.sh`.
 
 ### Run a component test suite
 
