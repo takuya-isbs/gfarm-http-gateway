@@ -1,9 +1,33 @@
-# ========= Build Stage =========
-FROM debian:bookworm-slim AS builder
+ARG UBUNTU_BASE_IMAGE=ubuntu:26.04
+
+# ========= Python Build Stage =========
+FROM ${UBUNTU_BASE_IMAGE} AS python-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG PYTHON_VERSION=3.15.2
+ARG PYTHON_SHA256=8b5536d280142ecf6cdfe15d12a21ba1c65e300bbf7b28a8d0cdb849575797de
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential ca-certificates curl \
+    libbz2-dev libffi-dev libgdbm-dev liblzma-dev libncurses-dev \
+    libreadline-dev libsqlite3-dev libssl-dev uuid-dev zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    curl -fsSLO "https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tar.xz"; \
+    echo "${PYTHON_SHA256}  Python-${PYTHON_VERSION}.tar.xz" | sha256sum -c -; \
+    tar -xJf "Python-${PYTHON_VERSION}.tar.xz"; \
+    cd "Python-${PYTHON_VERSION}"; \
+    ./configure --prefix=/opt/cpython --with-ensurepip=install; \
+    make -j"$(nproc)"; \
+    make install; \
+    /opt/cpython/bin/python3 --version
+
+# ========= Gfarm Build Stage =========
+FROM ${UBUNTU_BASE_IMAGE} AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# ==== Set ARGs for build-time config ====
 ARG GFARM_VER=2.8.12
 ARG GFARM_SRC_URL=https://github.com/oss-tsukuba/gfarm/archive/${GFARM_VER}.tar.gz
 ARG GFARM_SRC_GIT_URL=https://github.com/oss-tsukuba/gfarm.git
@@ -15,36 +39,28 @@ ARG SCITOKENS_CPP_SRC_GIT_BRANCH=master
 ARG SASL_XOAUTH2_SRC_GIT_URL=https://github.com/oss-tsukuba/cyrus-sasl-xoauth2-idp.git
 ARG SASL_XOAUTH2_SRC_GIT_BRANCH=feature/keycloak
 
-# ==== Install build dependencies ====
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    autoconf automake libtool pkg-config \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential autoconf automake libtool pkg-config \
     libssl-dev libpq-dev libsasl2-dev sasl2-bin \
-    libcurl4-openssl-dev \
-    libexpat1-dev \
-    uuid-dev libsqlite3-dev \
-    git cmake g++ \
-    ca-certificates \
-    wget \
-    python3 python3-docopt python3-schema
+    libcurl4-openssl-dev libexpat1-dev uuid-dev libsqlite3-dev \
+    git cmake g++ ca-certificates wget \
+    python3 python3-docopt python3-schema \
+    && rm -rf /var/lib/apt/lists/*
 
-# ==== Build scitokens-cpp ====
 RUN set -eux && cd /tmp \
-    && git clone -b ${SCITOKENS_CPP_SRC_GIT_BRANCH} --depth 1 ${SCITOKENS_CPP_SRC_GIT_URL} scitokens-cpp \
+    && git clone -b "${SCITOKENS_CPP_SRC_GIT_BRANCH}" --depth 1 "${SCITOKENS_CPP_SRC_GIT_URL}" scitokens-cpp \
     && cd scitokens-cpp \
     && mkdir build && cd build \
     && cmake -DCMAKE_INSTALL_PREFIX="/usr" .. \
-    && make && make install
+    && make -j"$(nproc)" && make install
 
-# ==== Build cyrus-sasl-xoauth2-idp ====
 RUN set -eux && cd /tmp \
-    && git clone -b ${SASL_XOAUTH2_SRC_GIT_BRANCH} --depth 1 ${SASL_XOAUTH2_SRC_GIT_URL} cyrus-sasl-xoauth2-idp \
+    && git clone -b "${SASL_XOAUTH2_SRC_GIT_BRANCH}" --depth 1 "${SASL_XOAUTH2_SRC_GIT_URL}" cyrus-sasl-xoauth2-idp \
     && cd cyrus-sasl-xoauth2-idp \
     && ./autogen.sh \
-    && ./configure --libdir=$(pkg-config --variable=libdir libsasl2) \
-    && make && make install
+    && ./configure --libdir="$(pkg-config --variable=libdir libsasl2)" \
+    && make -j"$(nproc)" && make install
 
-# ==== Build Gfarm ====
 RUN --mount=type=bind,source=${GFARM_SRC_LOCAL},target=/tmp/gfarm-local,readonly \
     set -eux && cd /tmp \
     && if [ -n "${GFARM_SRC_URL}" ]; then \
@@ -65,27 +81,23 @@ RUN --mount=type=bind,source=${GFARM_SRC_LOCAL},target=/tmp/gfarm-local,readonly
     && make -j"$(nproc)" \
     && make install
 
-# ==== Collect SASL plugin and libscitokens ====
-RUN LIBDIR=$(pkg-config --variable=libdir libsasl2) \
+RUN LIBDIR="$(pkg-config --variable=libdir libsasl2)" \
     && mkdir -p /tmp/libs/sasl2 \
     && cp "$LIBDIR"/libSciTokens* /tmp/libs/ \
     && cp "$LIBDIR"/sasl2/* /tmp/libs/sasl2/ \
     && echo "$(pkg-config --variable=libdir libsasl2)" > /tmp/sasl2-libdir.txt
 
 # ========= Runtime Stage =========
-FROM debian:bookworm-slim AS runtime
+FROM ${UBUNTU_BASE_IMAGE} AS runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
-
-# ==== Set ARGs for runtime ====
 ARG NODE_VERSION=26.13.0
 
-# ==== Install runtime dependencies ====
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libcurl4 libssl3 libexpat1 libatomic1 libgcc-s1 libstdc++6 libuuid1 \
-    libsasl2-2 libsasl2-modules sasl2-bin netbase \
-    ca-certificates curl xz-utils \
-    python3-minimal python3-pip python3-venv python3-docopt python3-schema \
+    libcurl4t64 libssl3t64 libexpat1 libatomic1 libgcc-s1 libstdc++6 libuuid1 \
+    libbz2-1.0 libffi8 libgdbm6t64 liblzma5 libncursesw6 libreadline8t64 \
+    libsqlite3-0 zlib1g libsasl2-2 libsasl2-modules sasl2-bin netbase \
+    ca-certificates curl xz-utils python3-minimal python3-docopt python3-schema \
     && case "$(dpkg --print-architecture)" in \
     amd64) NODE_ARCH="x64" ;; \
     arm64) NODE_ARCH="arm64" ;; \
@@ -98,29 +110,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ln -s /usr/local/lib/nodejs/bin/node /usr/local/bin/node \
     && ln -s /usr/local/lib/nodejs/bin/npm /usr/local/bin/npm \
     && ln -s /usr/local/lib/nodejs/bin/npx /usr/local/bin/npx \
-    && rm -rf /tmp/node.tar.xz \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /tmp/node.tar.xz /var/lib/apt/lists/*
 
-# ==== Copy Gfarm client binaries and libraries ====
+COPY --from=python-builder /opt/cpython /opt/cpython
 COPY --from=builder /usr/local/bin/gf* /usr/local/bin/
 COPY --from=builder /usr/local/lib/libgf* /usr/local/lib/
-RUN mkdir -p /tmp/libs
 COPY --from=builder /tmp/libs/ /tmp/libs/
 COPY --from=builder /tmp/sasl2-libdir.txt /tmp/
-RUN LIBDIR=$(cat /tmp/sasl2-libdir.txt) \
+RUN LIBDIR="$(cat /tmp/sasl2-libdir.txt)" \
     && cp /tmp/libs/libSciTokens* "$LIBDIR"/ \
     && mkdir -p "$LIBDIR"/sasl2 \
     && cp /tmp/libs/sasl2/* "$LIBDIR"/sasl2/ \
     && ldconfig \
     && rm -rf /tmp/libs /tmp/sasl2-libdir.txt
-RUN ldconfig
 
-# ==== Copy gfarm-http-gateway ====
 COPY . /app/gfarm-http-gateway
-
-# ==== Build ====
 WORKDIR /app/gfarm-http-gateway
-RUN ./setup.sh
+RUN PATH="/opt/cpython/bin:${PATH}" ./setup.sh
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

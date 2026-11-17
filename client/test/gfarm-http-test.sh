@@ -37,6 +37,9 @@ EOF
 opt_insecure=0
 opt_verbose=0
 opt_help=0
+if [ "${GFARM_HTTP_TEST_INSECURE:-false}" = true ]; then
+    opt_insecure=1
+fi
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -463,6 +466,8 @@ echo ""
 
 # testdir is unique, so cleanup is safe even if creation or a test fails.
 trap clean EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 test_cases=(
     test_whoami

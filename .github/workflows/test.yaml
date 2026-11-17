@@ -8,6 +8,9 @@ on:
   push:
   pull_request:
 
+env:
+  PYTHON_REQUIREMENTS_BASELINE: "3.11"
+
 jobs:
   # Resolve the latest Python dependencies once; every later job installs this exact set.
   prepare-requirements:
@@ -22,7 +25,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: ${{ env.PYTHON_REQUIREMENTS_BASELINE }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -65,7 +68,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: ${{ env.PYTHON_REQUIREMENTS_BASELINE }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -104,162 +107,34 @@ jobs:
           name: playwright-report
           path: ./server/frontend/app/react-app/playwright-report/
 
-  e2e-test:
-    name: docker/dist real-Gfarm E2E
+  e2e-test-python3_11:
+    name: docker/dist real-Gfarm E2E (Python 3.11)
     needs:
       - prepare-requirements
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    permissions:
-      contents: read
-    steps:
-      - name: checkout Gfarm
-        uses: actions/checkout@v7
-        with:
-          repository: takuya-isbs/gfarm
-          ref: feature/docker-dist-gfarm-http-gateway
-          path: gfarm
+    uses: ./.github/workflows/docker-dist-e2e.yml
+    with:
+      python-version: "3.11"
+      bake-target: http-gw-python3_11
+      http-gw-url: http://http-gw-python3-11:8000
 
-      - name: checkout gfarm-http-gateway
-        uses: actions/checkout@v7
-        with:
-          path: gfarm/gfarm-http-gateway
-
-      # The gfarm-http-gateway image installs the frozen requirements.txt from this build context.
-      - name: Download frozen requirements
-        uses: actions/download-artifact@v7
-        with:
-          name: frozen-requirements
-          path: gfarm/gfarm-http-gateway/server
-
-      - name: Get Docker build user
-        id: user
-        run: |
-          echo "name=$(id -un)" >> "$GITHUB_OUTPUT"
-          echo "uid=$(id -u)" >> "$GITHUB_OUTPUT"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      # Pull Compose images and the Playwright image concurrently.
-      # --ignore-pull-failures tolerates local-only tags that are built later
-      # (for example gfarm-jwt-server:local).
-      - name: Pull registry images in parallel
-        run: |
-          pids=()
-          for compose_file in \
-            gfarm/docker/dist/jwt-server/docker-compose.yaml \
-            gfarm/docker/dist/http-gateway/docker-compose.yaml; do
-            docker compose -f "$compose_file" pull --ignore-buildable --ignore-pull-failures --quiet &
-            pids+=("$!")
-          done
-          playwright_image=$(<gfarm/gfarm-http-gateway/server/e2e-test/playwright-docker-image.txt)
-          echo "[PREP] Docker host: pulling Playwright image ${playwright_image}..."
-          docker pull "$playwright_image" &
-          pids+=("$!")
-          status=0
-          for pid in "${pids[@]}"; do
-            wait "$pid" || status=1
-          done
-          exit "$status"
-
-      # Build the docker/dist images concurrently, run from the gfarm root (source: gfarm).
-      # Bake files are used instead of compose files: see docker/dist/docker-bake.hcl.
-      # Cache is per target (GitHub Actions cache).
-      - name: Build docker/dist images in parallel
-        uses: docker/bake-action@v7
-        env:
-          BUILD_USER: ${{ steps.user.outputs.name }}
-          BUILD_UID: ${{ steps.user.outputs.uid }}
-        with:
-          source: gfarm
-          files: |
-            docker/dist/docker-bake.hcl
-            docker/dist/http-gateway/docker-bake.hcl
-          targets: gfarm,gateway
-          load: true
-          set: |
-            minica.cache-from=type=gha,scope=gfarm-http-gateway-minica
-            minica.cache-to=type=gha,mode=max,scope=gfarm-http-gateway-minica
-            gfarm-ubuntu.cache-from=type=gha,scope=gfarm-http-gateway-gfarm-ubuntu
-            gfarm-ubuntu.cache-to=type=gha,mode=max,scope=gfarm-http-gateway-gfarm-ubuntu
-            jwt-server-back.cache-from=type=gha,scope=gfarm-http-gateway-jwt-server-back
-            jwt-server-back.cache-to=type=gha,mode=max,scope=gfarm-http-gateway-jwt-server-back
-            setup-keycloak.cache-from=type=gha,scope=gfarm-http-gateway-setup-keycloak
-            setup-keycloak.cache-to=type=gha,mode=max,scope=gfarm-http-gateway-setup-keycloak
-            gateway.cache-from=type=gha,scope=gfarm-http-gateway-gateway
-            gateway.cache-to=type=gha,mode=max,scope=gfarm-http-gateway-gateway
-
-      - name: Create docker/dist certificates and start Gfarm containers
-        run: |
-          cd gfarm/docker/dist
-          MINICA_SKIP_BUILD=1 sh ./minica.sh
-          docker compose up -d --no-build
-
-      - name: Build and initialize Gfarm
-        run: |
-          docker exec -u "$USER" -w "/home/$USER/gfarm/docker/dist" gfarm-c1 \
-            sh ./all.sh
-
-      - name: Initialize Keycloak and JWT Server 1
-        run: timeout 10m make -C gfarm/docker/dist/jwt-server init-jwt-server1
-
-      - name: Start JWT Server
-        run: |
-          docker compose -f gfarm/docker/dist/jwt-server/docker-compose.yaml \
-            up -d jwt-server-front
-
-      - name: Copy Gfarm CA certificates to http-gw
-        run: make -C gfarm/docker/dist/http-gateway setup
-
-      # The http-gw image is built by the bake step above, so start without building.
-      - name: Start http-gw
-        run: make -C gfarm/docker/dist/http-gateway up-nobuild
-
-      - name: Wait for http-gw
-        run: |
-          for attempt in $(seq 1 60); do
-            if docker exec gfarm-c1 curl --fail --silent \
-              http://http-gw:8000/openapi.json >/dev/null; then
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "http-gw did not become ready within 120 seconds." >&2
-          exit 1
-
-      - name: Run real-Gfarm integration test
-        env:
-          GFARM_HTTP_TEST_PASSWORD: PASSWORD
-        run: make -C gfarm/docker/dist/http-gateway test-e2e
-
-      - name: Collect container logs on failure
-        if: failure()
-        run: |
-          mkdir -p "$RUNNER_TEMP/docker-dist-logs"
-          docker compose -f gfarm/docker/dist/docker-compose.yaml logs --no-color \
-            > "$RUNNER_TEMP/docker-dist-logs/gfarm-compose.log" 2>&1 || true
-          docker compose -f gfarm/docker/dist/jwt-server/docker-compose.yaml logs --no-color \
-            > "$RUNNER_TEMP/docker-dist-logs/jwt-server-compose.log" 2>&1 || true
-          docker compose --env-file gfarm/docker/dist/http-gateway/.env \
-            -f gfarm/docker/dist/http-gateway/docker-compose.yaml logs --no-color \
-            > "$RUNNER_TEMP/docker-dist-logs/http-gw-compose.log" 2>&1 || true
-          docker exec gfarm-c1 journalctl -b -n 1000 --no-pager \
-            > "$RUNNER_TEMP/docker-dist-logs/gfarm-c1-journal.log" 2>&1 || true
-
-      - name: Upload container logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: docker-dist-e2e-logs
-          path: ${{ runner.temp }}/docker-dist-logs/
+  e2e-test-python3_15:
+    name: docker/dist real-Gfarm E2E (Python 3.15 via NGINX HTTPS)
+    needs:
+      - prepare-requirements
+    uses: ./.github/workflows/docker-dist-e2e.yml
+    with:
+      python-version: "3.15"
+      bake-target: http-gw-python3_15
+      http-gw-url: https://http-gw-https
+      insecure-tls: true
 
   update-requirements:
     name: Update Python requirements
     needs:
       - prepare-requirements
       - unit-test
-      - e2e-test
+      - e2e-test-python3_11
+      - e2e-test-python3_15
     if: github.event_name == 'push' && github.ref_type == 'branch'
     permissions:
       contents: write

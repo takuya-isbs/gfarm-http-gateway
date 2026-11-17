@@ -1,0 +1,104 @@
+name: gfarm-http-gateway-docker-dist
+
+x-http-gw-environment: &http-gw-environment
+  GFARM_HTTP_CONFIG_FILE: /config/gfarm-http-gateway.conf
+  GFARM_HTTP_GFARM_CONFIG_FILE: /config/gfarm2.conf
+  GFARM_HTTP_REDIS_HOST: redis
+  GFARM_HTTP_REDIS_PASSWORD: ${GFARM_HTTP_REDIS_PASSWORD:?Set in docker/dist/http-gateway/.env}
+
+x-http-gw-volumes: &http-gw-volumes
+  - ${GFARM_HTTP_GATEWAY_CONFIG_DIR:?Set by docker/dist/http-gateway/Makefile}/gfarm-http-gateway-for-docker-dist.conf:/config/gfarm-http-gateway.conf:ro
+  - ${GFARM_HTTP_GATEWAY_CONFIG_DIR:?Set by docker/dist/http-gateway/Makefile}/gfarm2.conf-for-docker-dist:/config/gfarm2.conf:ro
+  - type: bind
+    source: ${DOCKER_DIST_CERT_DIR:?Set by docker/dist/http-gateway/Makefile}
+    target: /config/certs
+    read_only: true
+    bind:
+      create_host_path: false
+
+services:
+  http-gw:
+    build:
+      context: ${GFARM_HTTP_GATEWAY_CONTEXT:?Set by docker/dist/http-gateway/Makefile}
+      dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: ${GFARM_HTTP_PYTHON_VERSION:-3.15.2}
+        PYTHON_SHA256: ${GFARM_HTTP_PYTHON_SHA256:-8b5536d280142ecf6cdfe15d12a21ba1c65e300bbf7b28a8d0cdb849575797de}
+    image: gfarm-http-gateway-docker-dist
+    command: ["--host", "0.0.0.0", "--port", "8000", "--forwarded-allow-ips=*"]
+    environment: *http-gw-environment
+    volumes: *http-gw-volumes
+    networks:
+      gfarm_net:
+        aliases:
+          - http-gw-python3-15
+      proxy_net:
+      redis_net:
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  http-gw-python3.11:
+    build:
+      context: ${GFARM_HTTP_GATEWAY_CONTEXT:?Set by docker/dist/http-gateway/Makefile}
+      dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: 3.11.18
+        PYTHON_SHA256: 9120e0a653868f6e3698d36cdd99e5a58903ec9469e448f21d98f7b16d8fa290
+    image: gfarm-http-gateway-docker-dist:python3.11
+    command: ["--host", "0.0.0.0", "--port", "8000", "--forwarded-allow-ips=*"]
+    environment: *http-gw-environment
+    volumes: *http-gw-volumes
+    networks:
+      gfarm_net:
+        aliases:
+          - http-gw-python3-11
+      proxy_net:
+      redis_net:
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7
+    command:
+      - redis-server
+      - --bind
+      - 0.0.0.0
+      - --requirepass
+      - ${GFARM_HTTP_REDIS_PASSWORD}
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+    environment:
+      GFARM_HTTP_REDIS_PASSWORD: ${GFARM_HTTP_REDIS_PASSWORD}
+    networks:
+      - redis_net
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$GFARM_HTTP_REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  nginx:
+    image: nginx:stable
+    volumes:
+      - ${GFARM_HTTP_GATEWAY_E2E_CONFIG_DIR:?Set by docker/dist/http-gateway/Makefile}/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${DOCKER_DIST_HTTPS_CERT_DIR:?Set by docker/dist/http-gateway/Makefile}:/etc/nginx/certs:ro
+    networks:
+      gfarm_net:
+        aliases:
+          - http-gw-https
+      proxy_net:
+    depends_on:
+      - http-gw
+
+networks:
+  gfarm_net:
+    name: ${DOCKER_DIST_NETWORK:-gfarm_net}
+    external: true
+  proxy_net:
+    internal: true
+  redis_net:
+    internal: true

@@ -14,19 +14,20 @@ set -Eeuo pipefail
 #   playwright_ a path inside the Playwright container
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-gateway_root=$(cd -- "${script_dir}/../.." && pwd)
-react_app_dir="${gateway_root}/server/frontend/app/react-app"
+http_gw_root=$(cd -- "${script_dir}/../.." && pwd)
+react_app_dir="${http_gw_root}/server/frontend/app/react-app"
 host_fixture="${react_app_dir}/tests/data/docker-dist-upload.txt"
-playwright_fixture="/workspace/${host_fixture#"${gateway_root}/"}"
+playwright_fixture="/workspace/${host_fixture#"${http_gw_root}/"}"
 
 default_test_image=$(<"${script_dir}/playwright-docker-image.txt")
 docker_dist_client=${DOCKER_DIST_CLIENT:-gfarm-c1}
 docker_dist_user=${DOCKER_DIST_USER:-${USER:-$(id -un)}}
-container_checkout_client="${DOCKER_DIST_CHECKOUT_ROOT:?Set by docker/dist/http-gateway/Makefile}/$(basename "${gateway_root}")/client"
+container_checkout_client="${DOCKER_DIST_CHECKOUT_ROOT:?Set by docker/dist/http-gateway/Makefile}/$(basename "${http_gw_root}")/client"
 docker_dist_workdir=${DOCKER_DIST_WORKDIR:?Set by docker/dist/http-gateway/Makefile}
-gateway_url=${GFARM_HTTP_GATEWAY_URL:?Set by docker/dist/http-gateway/Makefile}
+http_gw_url=${GFARM_HTTP_GATEWAY_URL:?Set by docker/dist/http-gateway/Makefile}
 test_username=${GFARM_HTTP_TEST_USERNAME:?Set by docker/dist/http-gateway/Makefile}
 test_password=${GFARM_HTTP_TEST_PASSWORD:-}
+test_insecure=${GFARM_HTTP_TEST_INSECURE:-false}
 test_image=${PLAYWRIGHT_DOCKER_IMAGE:-${default_test_image}}
 docker_dist_network=${DOCKER_DIST_NETWORK:?Set by docker/dist/http-gateway/Makefile}
 jwt_server_url=${JWT_SERVER_URL:?Set by docker/dist/http-gateway/Makefile}
@@ -63,6 +64,8 @@ Usage:
   $0
   $0 --list-webui-cases
   $0 --clean-cache
+  $0 --cli-only
+  $0 --webui-only
   GFARM_HTTP_WEBUI_CASE='exact Playwright test title' $0 --webui-case
 EOF
 }
@@ -87,6 +90,20 @@ case "${1:-}" in
             exit 2
         fi
         mode=clean-cache
+        ;;
+    --cli-only)
+        if (( $# != 1 )); then
+            usage >&2
+            exit 2
+        fi
+        mode=cli-only
+        ;;
+    --webui-only)
+        if (( $# != 1 )); then
+            usage >&2
+            exit 2
+        fi
+        mode=webui-only
         ;;
     --webui-case)
         if (( $# != 1 )) || [[ -z "${webui_case}" ]]; then
@@ -160,8 +177,12 @@ copy_from_client() {
 }
 
 api_cli() {
-    docker_dist_exec --env "GFARM_HTTP_URL=${gateway_url}" \
-        "${container_gfarm_http}" "$@"
+    local insecure_args=()
+    if [[ "${test_insecure}" == true ]]; then
+        insecure_args=(-k)
+    fi
+    docker_dist_exec --env "GFARM_HTTP_URL=${http_gw_url}" \
+        "${container_gfarm_http}" "${insecure_args[@]}" "$@"
 }
 
 log_client_workdir() {
@@ -193,6 +214,8 @@ cleanup() {
     fi
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 initialize_host_temp_paths() {
     host_download=$(mktemp)
@@ -364,6 +387,10 @@ prepare_cli_credential_if_needed() {
     else
         echo "[PREP] ${docker_dist_client} container: gfarm-http credential check" \
             "failed; refresh it via JWT Server."
+        if [[ -z "${playwright_node_modules_cache}" ]]; then
+            prepare_playwright_image
+            prepare_react_app_copy
+        fi
         prepare_jwt_passphrase
         prepare_cli_credential
     fi
@@ -385,8 +412,8 @@ prepare_test_root() {
     docker_dist_exec gfchmod 1777 /tmp || :
     echo "[PREP] Gfarm: create test directory ${gfarm_test_root} via gfarm-http" \
         "in ${docker_dist_client}..."
-    api_cli mkdir "${gfarm_test_root}"
     gfarm_test_root_created=true
+    api_cli mkdir "${gfarm_test_root}"
 }
 
 escape_grep_literal() {
@@ -429,7 +456,7 @@ run_webui_cases() {
         --volume "${host_react_app_copy}:${playwright_container_app_dir}:ro" \
         --volume "${playwright_node_modules_cache}:${playwright_container_app_dir}/node_modules:ro" \
         --workdir "${playwright_container_app_dir}" \
-        --env "GFARM_HTTP_GATEWAY_URL=${gateway_url}" \
+        --env "GFARM_HTTP_GATEWAY_URL=${http_gw_url}" \
         --env "GFARM_HTTP_TEST_USERNAME=${test_username}" \
         --env "GFARM_HTTP_TEST_DIRECTORY=${test_directory}" \
         --env "GFARM_HTTP_TEST_UPLOAD_FILE=${playwright_fixture}" \
@@ -583,7 +610,8 @@ run_selected_webui_case() {
 # separately and cleans up its unique test directory.
 test_cli_operations() {
     echo "  - ${docker_dist_client} container: run client/test/gfarm-http-test.sh..."
-    docker_dist_exec --env "GFARM_HTTP_URL=${gateway_url}" \
+    docker_dist_exec --env "GFARM_HTTP_URL=${http_gw_url}" \
+        --env "GFARM_HTTP_TEST_INSECURE=${test_insecure}" \
         sh -c "cd '${container_client_source_dir}' && ./test/gfarm-http-test.sh /tmp"
 }
 
@@ -607,7 +635,7 @@ test_webui_login_and_upload() {
         --volume "${host_react_app_copy}:${playwright_container_app_dir}:ro" \
         --volume "${playwright_node_modules_cache}:${playwright_container_app_dir}/node_modules:ro" \
         --workdir "${playwright_container_app_dir}" \
-        --env "GFARM_HTTP_GATEWAY_URL=${gateway_url}" \
+        --env "GFARM_HTTP_GATEWAY_URL=${http_gw_url}" \
         --env "GFARM_HTTP_TEST_USERNAME=${test_username}" \
         --env GFARM_HTTP_TEST_PASSWORD \
         --env "GFARM_HTTP_TEST_DIRECTORY=${gfarm_dir}" \
@@ -638,7 +666,7 @@ test_webui_operations() {
         --volume "${host_react_app_copy}:${playwright_container_app_dir}:ro" \
         --volume "${playwright_node_modules_cache}:${playwright_container_app_dir}/node_modules:ro" \
         --workdir "${playwright_container_app_dir}" \
-        --env "GFARM_HTTP_GATEWAY_URL=${gateway_url}" \
+        --env "GFARM_HTTP_GATEWAY_URL=${http_gw_url}" \
         --env "GFARM_HTTP_TEST_USERNAME=${test_username}" \
         --env GFARM_HTTP_TEST_PASSWORD \
         --env "GFARM_HTTP_TEST_DIRECTORY=${gfarm_test_directory}" \
@@ -684,6 +712,19 @@ print_summary() {
     (( failed_count == 0 ))
 }
 
+prepare_full_suite() {
+    require_test_environment
+    initialize_host_temp_paths
+    initialize_test_paths
+    prepare_gfarm_http
+    prepare_playwright_image
+    prepare_react_app_copy
+    prepare_jwt_passphrase
+    prepare_cli_credential
+    prepare_gfarm_oauth
+    prepare_test_root
+}
+
 main() {
     local total=3
     local names=(
@@ -698,16 +739,7 @@ main() {
     )
     local i
 
-    require_test_environment
-    initialize_host_temp_paths
-    initialize_test_paths
-    prepare_gfarm_http
-    prepare_playwright_image
-    prepare_react_app_copy
-    prepare_jwt_passphrase
-    prepare_cli_credential
-    prepare_gfarm_oauth
-    prepare_test_root
+    prepare_full_suite
 
     # The tests are independent: every test runs, even if an earlier one failed.
     for i in "${!fns[@]}"; do
@@ -717,12 +749,47 @@ main() {
     print_summary
 }
 
+run_cli_only() {
+    require_test_environment
+    initialize_host_temp_paths
+    initialize_test_paths
+    prepare_gfarm_http
+    prepare_cli_credential_if_needed
+    prepare_gfarm_oauth
+    test_cli_operations
+}
+
+run_webui_only() {
+    local total=2
+    local names=(
+        "[Web UI] login, CLI file, and Web UI upload checked by CLI download"
+        "[Web UI] Gfarm file operations"
+    )
+    local fns=(
+        test_webui_login_and_upload
+        test_webui_operations
+    )
+    local i
+
+    prepare_full_suite
+    for i in "${!fns[@]}"; do
+        run_test $((i + 1)) "${total}" "${names[$i]}" "${fns[$i]}"
+    done
+    print_summary
+}
+
 case "${mode}" in
     list-webui-cases)
         webui_case_listing
         ;;
     clean-cache)
         clean_playwright_cache
+        ;;
+    cli-only)
+        run_cli_only
+        ;;
+    webui-only)
+        run_webui_only
         ;;
     webui-case)
         require_test_environment

@@ -87,6 +87,14 @@ Before running the full suite or a single docker/dist Web UI case, build and sta
   GFARM_HTTP_TEST_PASSWORD=... make -C ../docker/dist/http-gateway test-e2e
   ```
 
+- Python version matrix: Run the Web UI and CLI suites through `http-gw-https`, then CLI suites against Python 3.11 and 3.15:
+
+  ```sh
+  GFARM_HTTP_TEST_PASSWORD=... make -C ../docker/dist/http-gateway test-e2e-matrix
+  ```
+
+  It prints each suite's result and elapsed time and writes detailed output to `test-e2e-matrix.log` in the current directory. It asks before overwriting an existing log.
+
 - One docker/dist Web UI case:
   - List case titles with `make -C ../docker/dist/http-gateway list-webui-cases`. Listing does not require the docker/dist services or a password.
   - Run one listed title with the Keycloak test user's password:
@@ -100,7 +108,7 @@ Before running the full suite or a single docker/dist Web UI case, build and sta
     This runs only the selected Web UI case.
 - Cache cleanup: Run `make -C ../docker/dist/http-gateway clean-test-cache` to remove the per-user Playwright dependency cache.
 
-A single Web UI case reuses a valid credential or refreshes it if needed. Each test run removes its unique temporary Gfarm directory. Runner implementation and fixture details are in `server/e2e-test/test-http-gateway-docker-dist.sh`.
+A single Web UI case reuses a valid credential or refreshes it if needed. Each test run removes its unique temporary Gfarm directory. Runner implementation and fixture details are in `server/e2e-test/test-http-gateway-docker-dist.sh`; matrix orchestration is in `server/e2e-test/test-http-gateway-docker-dist-matrix.sh`.
 
 ### Run a component test suite
 
