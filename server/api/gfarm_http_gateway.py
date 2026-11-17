@@ -2709,7 +2709,22 @@ async def whoami(request: Request,
     return await gfarm_command_standard_response(env, p, opname)
 
 
-@app.get("/dir/{gfarm_path:path}")
+@app.get(
+    "/dir/{gfarm_path:path}",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "content": {
+                "application/x-ndjson": {
+                    "schema": {"type": "string"},
+                },
+                "text/plain": {
+                    "schema": {"type": "string"},
+                },
+            },
+        },
+    },
+)
 async def dir_list(gfarm_path: str,
                    request: Request,
                    show_hidden: bool = False,
@@ -2895,7 +2910,20 @@ ZIP_BUFSIZE = 1024 * 1024
 ASYNC_GFEXPORT = str2bool(conf.GFARM_HTTP_ASYNC_GFEXPORT)
 
 
-@app.get("/file/{gfarm_path:path}")
+@app.get(
+    "/file/{gfarm_path:path}",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "content": {
+                "*/*": {
+                    "schema": {"type": "string", "format": "binary"},
+                },
+            },
+        },
+        204: {"description": "The requested file is empty."},
+    },
+)
 async def file_export(gfarm_path: str,
                       request: Request,
                       action: str = 'view',

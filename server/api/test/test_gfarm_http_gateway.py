@@ -31,6 +31,18 @@ req_headers_basic_auth = {"Authorization": "Basic " + userpass_b64_str}
 req_headers_anon_auth = {}
 
 
+def test_openapi_documents_streaming_response_content_types():
+    openapi = client.get("/openapi.json").json()
+
+    dir_operation = openapi["paths"]["/dir/{gfarm_path}"]["get"]
+    dir_content = dir_operation["responses"]["200"]["content"]
+    assert set(dir_content) == {"application/x-ndjson", "text/plain"}
+
+    file_operation = openapi["paths"]["/file/{gfarm_path}"]["get"]
+    file_content = file_operation["responses"]["200"]["content"]
+    assert set(file_content) == {"*/*"}
+
+
 @pytest.mark.parametrize(
     "value, expected",
     [(True, True), (False, False), ("yes", True), ("on", True),
@@ -668,6 +680,7 @@ async def test_dir_list(mock_claims, mock_get_file_info_not_file, mock_exec):
     response = client.get("/dir/testdir?long_format=0&output_format=plain",
                           headers=req_headers_oidc_auth)
     assert response.status_code == 200
+    assert response.headers["content-type"] == "text/plain; charset=utf-8"
     args, kwargs = mock_exec.call_args
     assert args == ('gfls', '-T', '/testdir')
     lines = [line async for line in response.aiter_lines()]
@@ -756,6 +769,7 @@ async def test_dir_list_json(mock_claims, mock_get_file_info_not_file,
     response = client.get("/dir/testdir",
                           headers=req_headers_oidc_auth)
     assert response.status_code == 200
+    assert response.headers["content-type"] == "application/x-ndjson"
     args, kwargs = mock_exec.call_args
     assert args == ('gfls', '-l', '-T', '/testdir')
     lines = [json.loads(line) async for line in response.aiter_lines()]
@@ -824,14 +838,23 @@ expect_gfstat = (gfstat_file_stdout.encode(), b"", 0)
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "path, expected_content_type",
+    [
+        ("/file/a/testfile.txt", "text/plain; charset=utf-8"),
+        ("/file/a/testfile.unknown", "application/octet-stream"),
+    ],
+)
 @pytest.mark.parametrize("mock_gfstat", [expect_gfstat], indirect=True)
 @pytest.mark.parametrize("mock_exec", [expect_gfexport], indirect=True)
-async def test_file_export(mock_claims, mock_gfstat, mock_exec):
-    response = client.get("/file/a/testfile.txt",
+async def test_file_export(mock_claims, mock_gfstat, mock_exec, path,
+                           expected_content_type):
+    response = client.get(path,
                           headers=req_headers_oidc_auth)
     assert response.status_code == 200
+    assert response.headers["content-type"] == expected_content_type
     args, kwargs = mock_exec.call_args
-    assert args == ('gfexport', '/a/testfile.txt')
+    assert args == ('gfexport', path.removeprefix("/file"))
     assert response.content == gfexport_stdout
 
 
