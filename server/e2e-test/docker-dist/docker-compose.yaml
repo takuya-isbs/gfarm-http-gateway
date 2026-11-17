@@ -18,13 +18,13 @@ x-http-gw-volumes: &http-gw-volumes
 
 services:
   http-gw:
+    image: gfarm-http-gateway-docker-dist:python${GFARM_HTTP_PYTHON_VERSION}
+    pull_policy: never
     build:
       context: ${GFARM_HTTP_GATEWAY_CONTEXT:?Set by docker/dist/http-gateway/Makefile}
       dockerfile: Dockerfile
       args:
-        PYTHON_VERSION: ${GFARM_HTTP_PYTHON_VERSION:-3.15.2}
-        PYTHON_SHA256: ${GFARM_HTTP_PYTHON_SHA256:-8b5536d280142ecf6cdfe15d12a21ba1c65e300bbf7b28a8d0cdb849575797de}
-    image: gfarm-http-gateway-docker-dist
+        PYTHON_VERSION: ${GFARM_HTTP_PYTHON_VERSION}
     command: ["--host", "0.0.0.0", "--port", "8000", "--forwarded-allow-ips=*"]
     environment: *http-gw-environment
     volumes: *http-gw-volumes
@@ -39,13 +39,13 @@ services:
         condition: service_healthy
 
   http-gw-python3.11:
+    image: gfarm-http-gateway-docker-dist:python${GFARM_HTTP_PYTHON_311_VERSION}
+    pull_policy: never
     build:
       context: ${GFARM_HTTP_GATEWAY_CONTEXT:?Set by docker/dist/http-gateway/Makefile}
       dockerfile: Dockerfile
       args:
-        PYTHON_VERSION: 3.11.18
-        PYTHON_SHA256: 9120e0a653868f6e3698d36cdd99e5a58903ec9469e448f21d98f7b16d8fa290
-    image: gfarm-http-gateway-docker-dist:python3.11
+        PYTHON_VERSION: ${GFARM_HTTP_PYTHON_311_VERSION}
     command: ["--host", "0.0.0.0", "--port", "8000", "--forwarded-allow-ips=*"]
     environment: *http-gw-environment
     volumes: *http-gw-volumes

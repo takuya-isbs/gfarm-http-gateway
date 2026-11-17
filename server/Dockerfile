@@ -1,32 +1,7 @@
 ARG UBUNTU_BASE_IMAGE=ubuntu:26.04
-
-# ========= Python Build Stage =========
-FROM ${UBUNTU_BASE_IMAGE} AS python-builder
-
-ARG DEBIAN_FRONTEND=noninteractive
-ARG PYTHON_VERSION=3.15.2
-ARG PYTHON_SHA256=8b5536d280142ecf6cdfe15d12a21ba1c65e300bbf7b28a8d0cdb849575797de
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential ca-certificates curl \
-    libbz2-dev libffi-dev libgdbm-dev liblzma-dev libncurses-dev \
-    libreadline-dev libsqlite3-dev libssl-dev uuid-dev zlib1g-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN set -eux; \
-    curl -fsSLO "https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tar.xz"; \
-    echo "${PYTHON_SHA256}  Python-${PYTHON_VERSION}.tar.xz" | sha256sum -c -; \
-    tar -xJf "Python-${PYTHON_VERSION}.tar.xz"; \
-    cd "Python-${PYTHON_VERSION}"; \
-    ./configure --prefix=/opt/cpython --with-ensurepip=install; \
-    make -j"$(nproc)"; \
-    make install; \
-    /opt/cpython/bin/python3 --version
-
-# ========= Gfarm Build Stage =========
-FROM ${UBUNTU_BASE_IMAGE} AS builder
-
-ARG DEBIAN_FRONTEND=noninteractive
+ARG PYTHON_VERSION
+ARG PYTHON_SHA256
+ARG NODE_VERSION=26.13.0
 
 ARG GFARM_VER=2.8.12
 ARG GFARM_SRC_URL=https://github.com/oss-tsukuba/gfarm/archive/${GFARM_VER}.tar.gz
@@ -38,6 +13,59 @@ ARG SCITOKENS_CPP_SRC_GIT_URL=https://github.com/scitokens/scitokens-cpp.git
 ARG SCITOKENS_CPP_SRC_GIT_BRANCH=master
 ARG SASL_XOAUTH2_SRC_GIT_URL=https://github.com/oss-tsukuba/cyrus-sasl-xoauth2-idp.git
 ARG SASL_XOAUTH2_SRC_GIT_BRANCH=feature/keycloak
+
+# ========= Python Build Stage =========
+FROM ${UBUNTU_BASE_IMAGE} AS python-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG PYTHON_VERSION
+ARG PYTHON_SHA256
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential ca-certificates curl \
+    libbz2-dev libffi-dev libgdbm-dev liblzma-dev libncurses-dev \
+    libreadline-dev libsqlite3-dev libssl-dev uuid-dev zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Keep Python build output in the intermediate build stage log.
+COPY python-versions.env /tmp/python-versions.env
+
+RUN build_log=/tmp/python-build.log; \
+    { \
+        set -eux; \
+        . /tmp/python-versions.env; \
+        python_version="${PYTHON_VERSION:-${GFARM_HTTP_PYTHON_VERSION}}"; \
+        python_sha256="${PYTHON_SHA256:-}"; \
+        if [ -z "${python_sha256}" ]; then \
+            case "${python_version}" in \
+                "${GFARM_HTTP_PYTHON_VERSION}") python_sha256="${GFARM_HTTP_PYTHON_SHA256}" ;; \
+                "${GFARM_HTTP_PYTHON_311_VERSION}") python_sha256="${GFARM_HTTP_PYTHON_311_SHA256}" ;; \
+                *) echo "PYTHON_SHA256 is required for Python ${python_version}" >&2; exit 1 ;; \
+            esac; \
+        fi; \
+        curl -fsSLO "https://www.python.org/ftp/python/${python_version}/Python-${python_version}.tar.xz"; \
+        echo "${python_sha256}  Python-${python_version}.tar.xz" | sha256sum -c -; \
+        tar -xJf "Python-${python_version}.tar.xz"; \
+        cd "Python-${python_version}"; \
+        ./configure --prefix=/opt/cpython --with-ensurepip=install; \
+        make -j"$(nproc)"; \
+        make install; \
+        /opt/cpython/bin/python3 --version; \
+    } >"${build_log}" 2>&1
+
+# ========= Gfarm Build Stage =========
+FROM ${UBUNTU_BASE_IMAGE} AS builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG GFARM_VER
+ARG GFARM_SRC_URL
+ARG GFARM_SRC_GIT_URL
+ARG GFARM_SRC_GIT_BRANCH
+ARG GFARM_SRC_LOCAL
+ARG SCITOKENS_CPP_SRC_GIT_URL
+ARG SCITOKENS_CPP_SRC_GIT_BRANCH
+ARG SASL_XOAUTH2_SRC_GIT_URL
+ARG SASL_XOAUTH2_SRC_GIT_BRANCH
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential autoconf automake libtool pkg-config \
@@ -52,14 +80,16 @@ RUN set -eux && cd /tmp \
     && cd scitokens-cpp \
     && mkdir build && cd build \
     && cmake -DCMAKE_INSTALL_PREFIX="/usr" .. \
-    && make -j"$(nproc)" && make install
+    && make -j"$(nproc)" >/dev/null \
+    && make install >/dev/null
 
 RUN set -eux && cd /tmp \
     && git clone -b "${SASL_XOAUTH2_SRC_GIT_BRANCH}" --depth 1 "${SASL_XOAUTH2_SRC_GIT_URL}" cyrus-sasl-xoauth2-idp \
     && cd cyrus-sasl-xoauth2-idp \
     && ./autogen.sh \
     && ./configure --libdir="$(pkg-config --variable=libdir libsasl2)" \
-    && make -j"$(nproc)" && make install
+    && make -j"$(nproc)" >/dev/null \
+    && make install >/dev/null
 
 RUN --mount=type=bind,source=${GFARM_SRC_LOCAL},target=/tmp/gfarm-local,readonly \
     set -eux && cd /tmp \
@@ -78,8 +108,8 @@ RUN --mount=type=bind,source=${GFARM_SRC_LOCAL},target=/tmp/gfarm-local,readonly
     fi \
     && cd "gfarm-${GFARM_VER}" \
     && ./configure --enable-xmlattr --enable-cyrus-sasl \
-    && make -j"$(nproc)" \
-    && make install
+    && make -j"$(nproc)" >/dev/null \
+    && make install >/dev/null
 
 RUN LIBDIR="$(pkg-config --variable=libdir libsasl2)" \
     && mkdir -p /tmp/libs/sasl2 \
@@ -91,7 +121,7 @@ RUN LIBDIR="$(pkg-config --variable=libdir libsasl2)" \
 FROM ${UBUNTU_BASE_IMAGE} AS runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG NODE_VERSION=26.13.0
+ARG NODE_VERSION
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libcurl4t64 libssl3t64 libexpat1 libatomic1 libgcc-s1 libstdc++6 libuuid1 \

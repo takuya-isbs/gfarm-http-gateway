@@ -1,17 +1,22 @@
 # Include-only targets for the docker/dist integration tests.
 # docker/dist service settings are supplied by the Gfarm Makefile.
+PYTHON_VERSIONS_FILE := $(abspath $(GFARM_HTTP_GATEWAY_DIR)/server/python-versions.env)
+include $(PYTHON_VERSIONS_FILE)
+
 GFARM_HTTP_PLAYWRIGHT_CACHE_HOME ?= $(if $(XDG_CACHE_HOME),$(XDG_CACHE_HOME),$(HOME)/.cache)
 DOCKER_DIST_COMPOSE_FILE ?= $(GFARM_HTTP_GATEWAY_DIR)/server/e2e-test/docker-dist/docker-compose.yaml
 DOCKER_DIST_PROJECT_DIR ?= $(abspath ../../..)
 DOCKER_DIST_COMPOSE_ENV_FILES ?= --env-file .env
 COMPOSE = docker compose $(DOCKER_DIST_COMPOSE_ENV_FILES) -f $(abspath $(DOCKER_DIST_COMPOSE_FILE)) --project-directory $(DOCKER_DIST_PROJECT_DIR)
 
-.PHONY: help-integration-test compose-config compose-up compose-up-nobuild compose-up-python3.11-nobuild compose-up-python3.15-nobuild pull test-e2e test-e2e-matrix list-webui-cases test-webui clean-test-cache
+.PHONY: help-integration-test bake-images compose-config compose-up compose-up-nobuild compose-up-python3.11-nobuild compose-up-python3.15-nobuild pull test-e2e test-e2e-matrix list-webui-cases test-webui clean-test-cache
 
 export GFARM_HTTP_WEBUI_CASE
 export GFARM_HTTP_PLAYWRIGHT_CACHE_HOME
+export GFARM_HTTP_PYTHON_VERSION GFARM_HTTP_PYTHON_311_VERSION
 
 help-integration-test:
+	@echo "make bake-images - build http-gw images with Buildx Bake"
 	@echo "make test-e2e - run the docker/dist real-Gfarm E2E test suite"
 	@echo "make test-e2e-matrix - run Web UI and CLI on http-gw-https, then CLI on Python 3.11/3.15"
 	@echo "make list-webui-cases - list real-Gfarm Playwright case titles"
@@ -19,13 +24,18 @@ help-integration-test:
 	@echo "make clean-test-cache - remove cached Playwright dependencies"
 
 compose-up:
-	$(COMPOSE) up -d --build --force-recreate http-gw http-gw-python3.11 nginx
+	$(COMPOSE) up -d --build --force-recreate
+
+bake-images:
+	cd "$(DOCKER_DIST_PROJECT_DIR)" && set -a && . "$(PYTHON_VERSIONS_FILE)" && set +a && \
+		docker buildx bake --load \
+		-f "$(abspath $(GFARM_HTTP_GATEWAY_DIR)/server/e2e-test/docker-dist/docker-bake.hcl)" http-gw
 
 compose-config:
 	$(COMPOSE) config --quiet
 
 compose-up-nobuild:
-	$(COMPOSE) up -d --no-build --force-recreate http-gw http-gw-python3.11 nginx
+	$(COMPOSE) up -d --no-build --force-recreate
 
 compose-up-python3.11-nobuild:
 	$(COMPOSE) up -d --no-build --force-recreate http-gw-python3.11

@@ -93,6 +93,8 @@ Before running the full suite or a single docker/dist Web UI case, build and sta
   GFARM_HTTP_TEST_PASSWORD=... make -C ../docker/dist/http-gateway test-e2e-matrix
   ```
 
+  Python versions and source checksums are managed in `server/python-versions.env` and shared by the Dockerfile, Compose, and Bake definitions.
+
   It prints each suite's result and elapsed time and writes detailed output to `test-e2e-matrix.log` in the current directory. It asks before overwriting an existing log.
 
 - One docker/dist Web UI case:

@@ -4,20 +4,22 @@ group "http-gw" {
   targets = ["http-gw-python3_11", "http-gw-python3_15"]
 }
 
+variable "GFARM_HTTP_PYTHON_VERSION" {}
+
+variable "GFARM_HTTP_PYTHON_311_VERSION" {}
+
 target "http-gw-python3_15" {
   context = "gfarm-http-gateway/server"
-  tags    = ["gfarm-http-gateway-docker-dist"]
+  tags    = ["gfarm-http-gateway-docker-dist:python${GFARM_HTTP_PYTHON_VERSION}"]
   args = {
-    PYTHON_VERSION = "3.15.2"
-    PYTHON_SHA256  = "8b5536d280142ecf6cdfe15d12a21ba1c65e300bbf7b28a8d0cdb849575797de"
+    PYTHON_VERSION = GFARM_HTTP_PYTHON_VERSION
   }
 }
 
 target "http-gw-python3_11" {
   context = "gfarm-http-gateway/server"
-  tags    = ["gfarm-http-gateway-docker-dist:python3.11"]
+  tags    = ["gfarm-http-gateway-docker-dist:python${GFARM_HTTP_PYTHON_311_VERSION}"]
   args = {
-    PYTHON_VERSION = "3.11.18"
-    PYTHON_SHA256  = "9120e0a653868f6e3698d36cdd99e5a58903ec9469e448f21d98f7b16d8fa290"
+    PYTHON_VERSION = GFARM_HTTP_PYTHON_311_VERSION
   }
 }
