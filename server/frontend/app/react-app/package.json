@@ -25,12 +25,6 @@
     "test:unit-webui:webkit:ui": "playwright test --project=webkit --ui",
     "test:unit-webui:chromium:headed": "playwright test --project=chromium --headed"
   },
-  "eslintConfig": {
-    "extends": [
-      "react-app",
-      "react-app/jest"
-    ]
-  },
   "browserslist": {
     "production": [
       ">0.2%",
@@ -44,7 +38,8 @@
     ]
   },
   "devDependencies": {
-    "@eslint/js": "^9.36.0",
+    "@eslint-react/eslint-plugin": "^5.30.4",
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.64.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
@@ -53,10 +48,9 @@
     "@types/node": "^24.6.2",
     "@vitejs/plugin-react": "^6.2.1",
     "adm-zip": "^0.5.16",
-    "eslint": "^9.36.0",
-    "eslint-plugin-react": "^7.37.5",
-    "eslint-plugin-react-hooks": "^6.1.0",
-    "globals": "^16.4.0",
+    "eslint": "^10.15.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
     "prettier": "^3.6.2",
     "vite": "^8.3.5",
     "vite-jsconfig-paths": "^2.0.1",

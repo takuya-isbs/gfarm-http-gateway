@@ -4,8 +4,8 @@ import { useDateFormat } from "@context/DateFormatContext";
 import PropTypes from "prop-types";
 
 function DetailTab({ active, detailContent }) {
-    if (!active) return null;
     const { dateFormat } = useDateFormat();
+    if (!active) return null;
 
     const rows = [
         { label: "Path", value: detailContent?.File || "" },
