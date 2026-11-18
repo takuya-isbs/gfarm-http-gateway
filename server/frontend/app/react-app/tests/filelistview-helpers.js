@@ -4,6 +4,8 @@ async function scrollToItem(page, filename) {
     const row = page.getByTestId(`row-${filename}`);
     const scrollArea = page.getByTestId("listview-scroll-desktop");
 
+    await expect(scrollArea).toBeVisible();
+
     await scrollArea.evaluate((element) => {
         element.scrollTop = 0;
     });
