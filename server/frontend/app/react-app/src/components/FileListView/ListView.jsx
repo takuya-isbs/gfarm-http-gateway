@@ -440,6 +440,7 @@ function ListView({
                 {DesktopHeader}
                 <div ref={desktopListRef} className="flex-grow-1 min-vh-0">
                     <VList
+                        data-testid="listview-scroll-desktop"
                         style={{ height: "100%" }}
                         data={desktopListData}
                         bufferSize={BUFFER_SIZE_PX}

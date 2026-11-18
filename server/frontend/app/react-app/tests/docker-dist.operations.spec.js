@@ -2,6 +2,7 @@ const { test, expect } = require("@playwright/test");
 const path = require("node:path");
 const fs = require("node:fs");
 const AdmZip = require("adm-zip");
+const { openItemAction, scrollToItem } = require("./filelistview-helpers");
 
 const username = process.env.GFARM_HTTP_TEST_USERNAME;
 const password = process.env.GFARM_HTTP_TEST_PASSWORD;
@@ -35,12 +36,6 @@ async function login(page) {
     await expect(page.getByTestId("storage-view")).toBeVisible();
 }
 
-async function openItemAction(page, filename, action) {
-    const row = page.getByTestId(`row-${filename}`);
-    await row.getByTestId("item-menu").click();
-    await page.getByTestId(`${action}-menu-${filename}`).click();
-}
-
 async function waitForProgress(page, type) {
     const task = page
         .getByTestId("progress-view")
@@ -48,6 +43,20 @@ async function waitForProgress(page, type) {
         .first();
     await expect(task).toBeVisible();
     await expect(task.locator(".badge")).toHaveText("completed", { timeout: 60_000 });
+}
+
+async function waitForDirectoryEntry(page, filename) {
+    const directoryPath = `/dir${testDirectory.replace(/\/$/, "")}`;
+    const response = await page.waitForResponse(async (candidate) => {
+        if (
+            candidate.request().method() !== "GET" ||
+            new URL(candidate.url()).pathname !== directoryPath
+        ) {
+            return false;
+        }
+        return (await candidate.text()).includes(filename);
+    });
+    expect(response.ok()).toBeTruthy();
 }
 
 async function downloadZip(page, startDownload) {
@@ -236,10 +245,13 @@ test("POST /move: rename a Gfarm file", async ({ page }) => {
             new URL(candidate.url()).pathname.endsWith("/move")
         );
     });
+    const directoryEntry = waitForDirectoryEntry(page, "renamed-by-webui.txt");
     await modal.getByTestId("modal-button-confirm").click();
     expect((await moveResponse).ok()).toBeTruthy();
     await expect(page.getByTestId("global-overlay")).not.toBeVisible({ timeout: 60_000 });
-    await expect(page.getByTestId("row-renamed-by-webui.txt")).toBeVisible();
+    await directoryEntry;
+    const renamedRow = await scrollToItem(page, "renamed-by-webui.txt");
+    await expect(renamedRow).toBeVisible();
 });
 
 test("DELETE /file/{path}: delete a Gfarm file", async ({ page }) => {
@@ -272,9 +284,13 @@ test("POST /symlink and GET /symlink/{path}: create and browse a symbolic link",
             new URL(candidate.url()).pathname.endsWith("/symlink")
         );
     });
+    const directoryEntry = waitForDirectoryEntry(page, "webui-link");
     await modal.getByTestId("modal-button-confirm").click();
     expect((await symlinkResponse).ok()).toBeTruthy();
-    await expect(page.getByTestId("row-webui-link")).toBeVisible();
+    await directoryEntry;
+    await expect(page.getByTestId("global-overlay")).not.toBeVisible({ timeout: 60_000 });
+    const symlinkRow = await scrollToItem(page, "webui-link");
+    await expect(symlinkRow).toBeVisible();
     const resolveResponsePromise = page.waitForResponse((candidate) => {
         return (
             candidate.request().method() === "GET" &&

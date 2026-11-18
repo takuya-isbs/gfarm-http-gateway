@@ -1,5 +1,6 @@
 const { test, expect } = require("./api-coverage-fixture");
 const fs = require("fs");
+const { openItemAction, scrollToItem } = require("./filelistview-helpers");
 
 const {
     isVisible,
@@ -167,6 +168,91 @@ test("Should display a long file list correctly", async ({ page }) => {
     await listview.getByText(lastFileName).scrollIntoViewIfNeeded();
 
     await expect(listview.getByText(lastFileName)).toBeVisible();
+});
+
+test("Should rename an off-screen virtualized row and refresh the list", async ({ page }) => {
+    test.setTimeout(10_000);
+
+    const numberOfFiles = 40;
+    const targetFileName = "zz-rename-source.txt";
+    const renamedFileName = "renamed-by-webui.txt";
+    await page.setViewportSize({ width: 1280, height: 480 });
+    let fileList = [];
+
+    await page.route("**/dir/*", async (route) => {
+        const url = new URL(route.request().url());
+        let requestedPath = url.pathname.substring(3);
+        if (requestedPath === "") {
+            requestedPath = "/";
+        } else {
+            requestedPath = "/" + decodeURIComponent(requestedPath);
+        }
+
+        if (fileList.length === 0) {
+            fileList = Array.from({ length: numberOfFiles }, (_, index) => ({
+                mode_str: "-rw-r--r--",
+                is_file: true,
+                nlink: 1,
+                uname: "user",
+                gname: "users",
+                size: 1024,
+                mtime: 1748628000,
+                name: `file-${String(index).padStart(3, "0")}.txt`,
+                path: `${requestedPath}/file-${String(index).padStart(3, "0")}.txt`,
+            }));
+            fileList.push({
+                mode_str: "-rw-r--r--",
+                is_file: true,
+                nlink: 1,
+                uname: "user",
+                gname: "users",
+                size: 1024,
+                mtime: 1748628000,
+                name: targetFileName,
+                path: `${requestedPath}/${targetFileName}`,
+            });
+        }
+
+        await route.fulfill({
+            status: 200,
+            contentType: "application/x-ndjson",
+            body: toNDJSON(fileList),
+        });
+    });
+    await page.route("**/move", async (route) => {
+        const { source, destination } = route.request().postDataJSON();
+        const item = fileList.find((candidate) => candidate.path === source);
+        item.name = destination.slice(destination.lastIndexOf("/") + 1);
+        item.path = destination;
+        await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    });
+
+    await page.goto(FRONTEND_URL);
+    await expect(page.getByTestId("row-file-000.txt")).toBeVisible();
+    await expect(page.getByTestId(`row-${targetFileName}`)).toHaveCount(0);
+
+    await openItemAction(page, targetFileName, "rename");
+    const renameModal = page.getByTestId("rename-modal");
+    await renameModal.locator("#rename-input").fill(renamedFileName);
+
+    const moveResponsePromise = page.waitForResponse((response) => {
+        return (
+            response.request().method() === "POST" &&
+            new URL(response.url()).pathname.endsWith("/move")
+        );
+    });
+    const directoryResponsePromise = page.waitForResponse((response) => {
+        return (
+            response.request().method() === "GET" &&
+            new URL(response.url()).pathname.includes("/dir/")
+        );
+    });
+    await renameModal.getByTestId("modal-button-confirm").click();
+    expect((await moveResponsePromise).ok()).toBeTruthy();
+    expect((await directoryResponsePromise).ok()).toBeTruthy();
+    await expect(renameModal).not.toBeVisible();
+    const renamedRow = await scrollToItem(page, renamedFileName);
+    await expect(renamedRow).toBeVisible();
 });
 
 test("Should sort files by name (ascending and descending)", async ({ page }) => {
