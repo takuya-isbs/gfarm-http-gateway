@@ -14,7 +14,7 @@ import PropTypes from "prop-types";
 const HEADER_ROW_MIN = 40;
 const DESKTOP_ROW_MIN = 60;
 const MOBILE_ROW_MIN = 60;
-const OVERSCAN_PX = 100; // virtual list overscan in pixels
+const BUFFER_SIZE_PX = 100;
 
 /* ===== Desktop row (memoized) ===== */
 const RowView = memo(function RowView({
@@ -271,6 +271,10 @@ function ListView({
     const desktopRowsHeight = (sortedItems?.length || 0) * desktopRowHeight;
     const desktopFillerHeight = Math.max(0, desktopHeight - desktopRowsHeight);
     const desktopHasFiller = desktopFillerHeight > 0;
+    const desktopListData = useMemo(
+        () => (desktopHasFiller ? [...sortedItems, null] : sortedItems),
+        [sortedItems, desktopHasFiller]
+    );
 
     // ===== Mobile filler calculation =====
     const [mobileHeight, setMobileHeight] = useState(0);
@@ -295,6 +299,10 @@ function ListView({
     const mobileRowsHeight = (sortedItems?.length || 0) * mobileRowHeight;
     const mobileFillerHeight = Math.max(0, mobileHeight - mobileRowsHeight);
     const mobileHasFiller = mobileFillerHeight > 0;
+    const mobileListData = useMemo(
+        () => (mobileHasFiller ? [...sortedItems, null] : sortedItems),
+        [sortedItems, mobileHasFiller]
+    );
 
     // Common row handlers (stable refs)
     const onRowClick = useCallback(
@@ -433,10 +441,10 @@ function ListView({
                 <div ref={desktopListRef} className="flex-grow-1 min-vh-0">
                     <VList
                         style={{ height: "100%" }}
-                        count={sortedItems.length + (desktopHasFiller ? 1 : 0)}
-                        overscan={OVERSCAN_PX}
+                        data={desktopListData}
+                        bufferSize={BUFFER_SIZE_PX}
                     >
-                        {(index) => {
+                        {(_item, index) => {
                             if (desktopHasFiller && index === sortedItems.length) {
                                 return (
                                     <div
@@ -480,10 +488,10 @@ function ListView({
                 <div ref={mobileListRef} className="flex-grow-1 min-vh-0">
                     <VList
                         style={{ height: "100%" }}
-                        count={sortedItems.length + (mobileHasFiller ? 1 : 0)}
-                        overscan={OVERSCAN_PX}
+                        data={mobileListData}
+                        bufferSize={BUFFER_SIZE_PX}
                     >
-                        {(index) => {
+                        {(_item, index) => {
                             if (mobileHasFiller && index === sortedItems.length) {
                                 return (
                                     <div

@@ -88,6 +88,19 @@ test("Should display the file list when accessing an existing path", async ({ pa
     }
 });
 
+test("Should display files in icon view", async ({ page }) => {
+    const targetPath = "/";
+    const expectedChildren = findChildrenByPath(fileStructureData, targetPath);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${targetPath}`);
+    await expect(page.locator('[data-testid="storage-view"]')).toBeVisible();
+    await page.locator('[data-testid="header-viewmode"]').click();
+
+    const iconRows = page.locator('[data-testid^="row-icon-"]');
+    await expect(iconRows.first()).toBeVisible();
+    await expect(page.getByText(expectedChildren[0].name)).toBeVisible();
+});
+
 test("Should show an error message when accessing a nonexistent path", async ({ page }) => {
     const nonexistentPath = "/nonexistent-directory-12345";
     await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${nonexistentPath}`);

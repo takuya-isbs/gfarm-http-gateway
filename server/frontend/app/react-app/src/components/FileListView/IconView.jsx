@@ -15,7 +15,7 @@ const CARD_MIN_REG = 240; // viewMode: icon_rg
 const CARD_MIN_SM = 150; // viewMode: icon_sm
 const GRID_GAP = 16;
 const ROW_MIN_HEIGHT = 180;
-const OVERSCAN_PX = 100; // virtual list overscan in pixels
+const BUFFER_SIZE_PX = 100;
 const HEADER_GRID_COLS = "40px 1fr 56px";
 const HEADER_ROW_MIN = 40;
 
@@ -206,6 +206,10 @@ function IconView({
     const rowsAreaHeight = rowCount * rowHeight;
     const fillerHeight = Math.max(0, containerHeight - rowsAreaHeight);
     const hasFiller = fillerHeight > 0;
+    const listData = useMemo(
+        () => Array.from({ length: rowCount + (hasFiller ? 1 : 0) }, (_, index) => index),
+        [rowCount, hasFiller]
+    );
 
     // ===== Row interaction handlers (stable refs) =====
     const onRowClick = useCallback(
@@ -337,8 +341,8 @@ function IconView({
             <div ref={listRef} className="flex-grow-1 min-vh-0">
                 <VList
                     style={{ height: "100%", scrollbarGutter: "stable" }}
-                    count={rowCount + (hasFiller ? 1 : 0)}
-                    overscan={OVERSCAN_PX}
+                    data={listData}
+                    bufferSize={BUFFER_SIZE_PX}
                 >
                     {(index) => {
                         // append a filler block so the list visually fills the viewport

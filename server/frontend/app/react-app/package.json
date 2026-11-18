@@ -9,7 +9,7 @@
     "react-dom": "^19.2.0",
     "react-icons": "^5.5.0",
     "react-router-dom": "^7.9.3",
-    "virtua": "^0.44.0"
+    "virtua": "^0.54.2"
   },
   "scripts": {
     "start": "vite --mode development --no-open",
