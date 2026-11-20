@@ -44,7 +44,7 @@ function FileTypeFilter({ parentName, fileTypes, filterTypes, setFilterTypes }) 
                     fileTypes.map((type) => (
                         <li key={type} htmlFor={`dropdown-filter-${type}`}>
                             <label
-                                className="form-check-label d-flex w-100"
+                                className="form-check-label d-flex w-100 gap-2"
                                 htmlFor={`${parentName}-dropdown-filter-${type}`}
                             >
                                 <input

@@ -483,6 +483,18 @@ test("Should filter folders alone and together with a file extension", async ({ 
     }
 });
 
+test("Should leave a visible gap between file type checkboxes and labels", async ({ page }) => {
+    await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}/documents`);
+
+    await page.locator('[data-testid="file-filter-dropdown"]').click();
+
+    for (const type of ["folder", "txt"]) {
+        const label = page.locator(`label[for="HomePage-dropdown-filter-${type}"]`);
+        await expect(label).toBeVisible();
+        await expect(label).toHaveCSS("column-gap", "8px");
+    }
+});
+
 // return the expected list of files based on a given dateFilter value
 const getExpectedFilesForDateFilter = (allFiles, filterType) => {
     const now = new Date("2025-06-01T12:00:00Z"); // freeze time
