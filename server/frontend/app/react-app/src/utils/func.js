@@ -251,11 +251,14 @@ export const getFileTypes = (files) => {
     const types = new Set();
 
     files.forEach((file) => {
-        if (!file.is_dir) {
-            const parts = file.name?.split(".");
-            if (parts?.length > 1) {
-                types.add(parts.pop().toLowerCase());
-            }
+        if (file.is_dir) {
+            types.add("folder");
+            return;
+        }
+
+        const parts = file.name?.split(".");
+        if (parts?.length > 1) {
+            types.add(parts.pop().toLowerCase());
         }
     });
 
@@ -277,9 +280,12 @@ export const filterItems = (items, filterTypes, dateFilter) => {
         let isTypeMatch = true;
         let isDateMatch = true;
         if (filterTypes.length !== 0) {
-            isTypeMatch = filterTypes.includes("folder") && file.type === "directory";
-            const ext = file.name.split(".").pop().toLowerCase();
-            isTypeMatch = filterTypes.includes(ext);
+            if (file.is_dir) {
+                isTypeMatch = filterTypes.includes("folder");
+            } else {
+                const ext = file.name.split(".").pop().toLowerCase();
+                isTypeMatch = filterTypes.includes(ext);
+            }
         }
 
         const updated = file.mtime * 1000;

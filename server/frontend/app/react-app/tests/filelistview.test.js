@@ -444,6 +444,45 @@ test("Should filter files by extension (.txt)", async ({ page }) => {
     }
 });
 
+test("Should filter folders alone and together with a file extension", async ({ page }) => {
+    const targetPath = "/documents";
+    await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${targetPath}`);
+
+    const initialFiles = findChildrenByPath(fileStructureData, targetPath);
+    const folders = initialFiles.filter((file) => !file.is_file);
+    const txtFiles = initialFiles.filter((file) => file.is_file && file.name.endsWith(".txt"));
+    const filterToggleButton = page.locator('[data-testid="file-filter-dropdown"]');
+    const listview = page.locator('[data-testid="listview"]');
+
+    await filterToggleButton.click();
+    const folderFilter = page.locator("#HomePage-dropdown-filter-folder");
+    await expect(folderFilter).toBeVisible();
+    await folderFilter.check();
+    await filterToggleButton.click();
+
+    await expect(listview.locator('[data-testid^="row-list-"]')).toHaveCount(folders.length);
+    for (const folder of folders) {
+        await isVisible(page, folder.name);
+    }
+    for (const txtFile of txtFiles) {
+        await isVisible(page, txtFile.name, true);
+    }
+
+    await filterToggleButton.click();
+    await page.locator("#HomePage-dropdown-filter-txt").check();
+    await filterToggleButton.click();
+
+    await expect(listview.locator('[data-testid^="row-list-"]')).toHaveCount(
+        folders.length + txtFiles.length
+    );
+    for (const folder of folders) {
+        await isVisible(page, folder.name);
+    }
+    for (const txtFile of txtFiles) {
+        await isVisible(page, txtFile.name);
+    }
+});
+
 // return the expected list of files based on a given dateFilter value
 const getExpectedFilesForDateFilter = (allFiles, filterType) => {
     const now = new Date("2025-06-01T12:00:00Z"); // freeze time
