@@ -978,13 +978,145 @@ git push
 When the locally generated `requirements.txt` is pushed with the changes, the
 GitHub Actions update step should find no further changes to commit.
 
-### To update frontend/app/react-app/package.json for latest
+### To update React app dependencies
 
-GitHub Actions does not automatically update `package.json` or
-`package-lock.json`. During development and operation, maintain the frontend
-dependencies by following the update procedure in the frontend README.
+GitHub Actions does not automatically update the React app dependencies. Update
+Patch and Minor dependencies together as one change, then test that group.
+Update packages in the Major version zero group separately, because a minor
+version increase before `1.0.0` may include breaking changes. Handle regular
+Major updates separately after reviewing their compatibility. A failing test
+identifies a problem in its update group, but does not by itself identify which
+dependency caused it.
+Run the procedure in the c2 environment with Node.js 26. Before starting, make
+sure `package.json` and `package-lock.json` have no unrelated unreviewed edits.
 
-See `Update packages` in [frontend/app/react-app/README.md](./frontend/app/react-app/README.md)
+From the `server/` directory, change to the React app directory. Run the
+baseline checks there before updating; if they fail, resolve the baseline
+failure first. Install the Chromium browser as described in the React app
+README if it is not already available.
+
+```bash
+cd frontend/app/react-app
+```
+
+```bash
+npm ci
+npm run lint
+npm run build
+npm run test:unit-webui:chromium
+```
+
+The current lint script does not set ESLint's `--max-warnings` option, so
+warnings alone do not fail `npm run lint`. Save the baseline warning output and
+compare it with the output after the update. ESLint errors or Prettier check
+failures still fail the command.
+
+To preview available updates, run
+[npm-check-updates](https://github.com/raineorshine/npm-check-updates):
+
+```bash
+npx npm-check-updates
+```
+
+The preview command is optional; `-u` can be run without it. Preview first when
+you want to inspect candidate versions before changing `package.json`.
+
+### Update Patch and Minor dependencies together
+
+Use `--target minor` to select Patch and Minor updates while excluding regular
+Major updates. This option also includes Minor updates to `0.x` packages, so
+reject every package listed in the `Major version zero` group:
+
+```bash
+npx npm-check-updates --target minor --reject "<major-version-zero-package-names>"
+```
+
+Review the preview to confirm that it contains the intended Patch and Minor
+updates only. Replace the quoted placeholder with space-separated package names
+from the current `Major version zero` group. Comma-separated names are also
+accepted. If there are no such packages, omit `--reject` and its value. Then
+apply the same selection and install the updated dependencies:
+
+```bash
+npx npm-check-updates --target minor --reject "<major-version-zero-package-names>" -u
+npm install
+```
+
+By default, npm-check-updates proposes the latest stable version for each direct
+dependency in `package.json` and ignores pre-release versions. The `-u` option
+writes the selected version ranges to `package.json` and preserves their range
+style. `npm install` resolves the dependency tree and updates
+`package-lock.json`, including transitive dependencies where allowed by their
+version ranges. Do not edit the lockfile by hand.
+
+Then verify the lockfile with a clean install and rerun the checks:
+
+```bash
+npm ci
+npm run lint
+npm run build
+npm run test:unit-webui:chromium
+```
+
+After the Patch and Minor update group passes, commit it separately.
+
+### Update Major version zero dependencies separately
+
+Next, update only the packages in the `Major version zero` group. Replace the
+quoted placeholder with space-separated package names from the current group.
+Comma-separated names are also accepted. Skip this stage if the group is empty.
+
+```bash
+npx npm-check-updates --filter "<major-version-zero-package-names>" --target minor
+```
+
+Review the preview, then apply the update. The `--target minor` option keeps a
+`0.x` dependency below `1.0.0` for this step.
+
+```bash
+npx npm-check-updates --filter "<major-version-zero-package-names>" --target minor -u
+npm install
+```
+
+Run the same checks above and commit this update separately. Review its release
+notes because a `0.x` minor update may change behavior or APIs.
+
+### Update regular Major dependencies last
+
+After the Major version zero group passes and is committed, review the regular
+Major candidates. Check their release notes and compatibility, then select only
+the package names in the `Major` group. Replace the quoted placeholder with
+space-separated names. Comma-separated names are also accepted. Skip this stage
+if the group is empty.
+
+```bash
+npx npm-check-updates --filter "<major-package-names>"
+```
+
+Review the preview, then apply these updates:
+
+```bash
+npx npm-check-updates --filter "<major-package-names>" -u
+npm install
+```
+
+Run the same checks above and commit these updates separately.
+
+Review both `package.json` and `package-lock.json` in the diff:
+
+```bash
+git diff -- package.json package-lock.json
+```
+
+Compare the lint output with the baseline. If a check fails, keep the failing
+test and its output, then isolate the cause on a separate working branch by
+restoring candidate dependencies to their previous versions, regenerating the
+lockfile with `npm install`, and rerunning the failing check. Narrow the
+candidates in groups; include transitive changes shown in the lockfile. If
+identifying each dependency's effect is more important than doing one batch,
+update compatible dependency groups in separate reviewable changes instead.
+
+For available commands and test setup, see the [React app README](./frontend/app/react-app/README.md).
 
 ### GitHub Actions
 

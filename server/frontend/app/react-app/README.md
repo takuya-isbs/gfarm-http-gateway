@@ -76,18 +76,7 @@ npm run test:unit-webui:chromium:ui
 ```
 ### Update packages
 
-Install [npm-check-updates](https://github.com/raineorshine/npm-check-updates)
-
-```bash
-# Show available updates
-npx npm-check-updates
-
-# Update package.json with latest versions
-npx npm-check-updates -u
-
-# Install and refresh package-lock.json
-npm install
-```
+Follow [the dependency update procedure in the server README](../../../README.md#to-update-react-app-dependencies).
 
 ## Folder Structure
 
