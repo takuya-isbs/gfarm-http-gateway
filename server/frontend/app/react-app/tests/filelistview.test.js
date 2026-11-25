@@ -170,6 +170,48 @@ test("Should display a long file list correctly", async ({ page }) => {
     await expect(listview.getByText(lastFileName)).toBeVisible();
 });
 
+test("Should scroll to a deeply virtualized row", async ({ page }) => {
+    test.setTimeout(20_000);
+
+    const numberOfFiles = 300;
+    const targetFileName = `file-${String(numberOfFiles - 1).padStart(4, "0")}.txt`;
+    await page.setViewportSize({ width: 1280, height: 480 });
+    await page.route("**/dir/*", async (route) => {
+        const url = new URL(route.request().url());
+        let requestedPath = url.pathname.substring(3);
+        if (requestedPath === "") {
+            requestedPath = "/";
+        } else {
+            requestedPath = "/" + decodeURIComponent(requestedPath);
+        }
+
+        const fileList = Array.from({ length: numberOfFiles }, (_, index) => {
+            const name = `file-${String(index).padStart(4, "0")}.txt`;
+            return {
+                mode_str: "-rw-r--r--",
+                is_file: true,
+                nlink: 1,
+                uname: "user",
+                gname: "users",
+                size: 1024,
+                mtime: 1748628000,
+                name,
+                path: `${requestedPath}/${name}`,
+            };
+        });
+
+        await route.fulfill({
+            status: 200,
+            contentType: "application/x-ndjson",
+            body: toNDJSON(fileList),
+        });
+    });
+
+    await page.goto(FRONTEND_URL);
+    const targetRow = await scrollToItem(page, targetFileName);
+    await expect(targetRow).toBeVisible();
+});
+
 test("Should rename an off-screen virtualized row and refresh the list", async ({ page }) => {
     test.setTimeout(10_000);
 
