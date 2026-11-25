@@ -44,11 +44,15 @@ test("Should create a new directory from the New menu", async ({ page }) => {
     const input = newdirModal.locator('[id="create-dir-input"]');
     await input.fill(testDirName);
 
-    await page.waitForTimeout(100);
-
     const confirmButton = newdirModal.locator('[data-testid="modal-button-confirm"]');
     await expect(confirmButton).toBeVisible();
+    const creationResponse = page.waitForResponse(
+        (response) =>
+            response.request().method() === "PUT" &&
+            new URL(response.url()).pathname === "/dir/testdir"
+    );
     await confirmButton.click();
+    expect((await creationResponse).status()).toBe(200);
 });
 
 test("Should display an error notification when directory creation fails", async ({ page }) => {
@@ -72,11 +76,15 @@ test("Should display an error notification when directory creation fails", async
     const input = newdirModal.locator('[id="create-dir-input"]');
     await input.fill(testDirName);
 
-    await page.waitForTimeout(100);
-
     const confirmButton = newdirModal.locator('[data-testid="modal-button-confirm"]');
     await expect(confirmButton).toBeVisible();
+    const creationResponse = page.waitForResponse(
+        (response) =>
+            response.request().method() === "PUT" &&
+            new URL(response.url()).pathname === "/dir/testdir"
+    );
     await confirmButton.click();
+    expect((await creationResponse).status()).toBe(500);
 
     const errorNotification = page.locator('[data-testid^="notification-"]');
     await expect(errorNotification).toBeVisible();

@@ -161,13 +161,20 @@ test("Should display a long file list correctly", async ({ page }) => {
     const listview = page.locator('[data-testid="listview"]');
 
     await listview.locator('[data-testid="row-list-0"]').click();
+    const scroller = page.getByTestId("listview-scroll-desktop");
+    const lastRow = listview.getByText(`large_file_${numberOfFiles - 1}.txt`, { exact: true });
+    await expect(lastRow).not.toBeInViewport();
+
     await page.keyboard.press("End");
-    await page.waitForTimeout(500);
 
-    const lastFileName = `large_file_${numberOfFiles - 1}.txt`;
-    await listview.getByText(lastFileName).scrollIntoViewIfNeeded();
-
-    await expect(listview.getByText(lastFileName)).toBeVisible();
+    await expect
+        .poll(() =>
+            scroller.evaluate(
+                (element) => element.scrollHeight - element.clientHeight - element.scrollTop
+            )
+        )
+        .toBeLessThanOrEqual(1);
+    await expect(lastRow).toBeInViewport();
 });
 
 test("Should scroll to a deeply virtualized row", async ({ page }) => {
