@@ -5,9 +5,9 @@ const { expect } = require("@playwright/test");
 
 // ===== CONFIGURATION CONSTANTS =====
 export const FRONTEND_URL = "http://localhost:3000";
-// export const API_URL = FRONTEND_URL;
 export const API_URL = "http://localhost:8080";
 export const ZIPNAME = "files.zip";
+export const MOCK_NANOS = 123456000;
 
 // File paths
 export const DIR_LIST = path.resolve(__dirname, "data/filelist.json");
@@ -17,9 +17,6 @@ export const DUMMYS = path.resolve(__dirname, "data/dummy");
 // Routes
 export const ROUTE_STORAGE = "/ui";
 export const ROUTE_DOWNLOAD = "/dl";
-
-// Global state
-let fileStructureData = null;
 
 // ===== UTILITY FUNCTIONS =====
 /**
@@ -40,7 +37,7 @@ export async function isVisible(page, filename, shouldNotBeVisible = false) {
 }
 
 /**
- * Clicks a menu item from the the context menu
+ * Clicks a menu item from the context menu
  * @param {Object} page - Playwright page object
  * @param {string} filename - Name of the file
  * @param {string} action - Action to perform
@@ -124,7 +121,15 @@ export function transformMtimeToUnix(items) {
     return items;
 }
 
-const normalizePath = (path) => (path?.startsWith("/") ? path : "/" + path);
+export function loadFileStructure() {
+    return transformMtimeToUnix(JSON.parse(fs.readFileSync(DIR_LIST, "utf-8")));
+}
+
+const normalizePath = (p) => {
+    if (!p || p === "/") return "/";
+    const cleaned = "/" + p.replace(/^\/+/, "").replace(/\/+$/, "");
+    return cleaned === "" ? "/" : cleaned;
+};
 
 const shouldSearchInNode = (node, normalizedTargetPath) => {
     return (
@@ -153,7 +158,7 @@ export const findChildrenByPath = (nodes, targetPath) => {
         }
 
         if (shouldSearchInNode(node, normalizedTargetPath)) {
-            const foundChildren = findChildrenByPath(node.childlen, targetPath);
+            const foundChildren = findChildrenByPath(node.childlen, normalizedTargetPath);
             if (foundChildren !== null) {
                 return foundChildren;
             }
@@ -179,13 +184,50 @@ export const findNodeByPath = (nodes, targetPath) => {
         }
 
         if (shouldSearchInNode(node, normalizedTargetPath)) {
-            const foundNode = findNodeByPath(node.childlen, targetPath);
+            const foundNode = findNodeByPath(node.childlen, normalizedTargetPath);
             if (foundNode !== null) {
                 return foundNode;
             }
         }
     }
     return null;
+};
+
+const addNodeToParent = (nodes, parentPath, newNode) => {
+    const children = findChildrenByPath(nodes, parentPath);
+    if (!children) return false;
+    const existingIdx = children.findIndex((c) => c.path === newNode.path);
+    if (existingIdx >= 0) {
+        children[existingIdx] = newNode;
+    } else {
+        children.push(newNode);
+    }
+    return true;
+};
+
+const removeNodeByPath = (nodes, targetPath) => {
+    const normalized = normalizePath(targetPath);
+    for (const node of nodes) {
+        if (Array.isArray(node.childlen)) {
+            const idx = node.childlen.findIndex((c) => c.path === normalized);
+            if (idx >= 0) {
+                const [removed] = node.childlen.splice(idx, 1);
+                return removed;
+            }
+            const nested = removeNodeByPath(node.childlen, normalized);
+            if (nested) return nested;
+        }
+    }
+    return null;
+};
+
+const updatePathsRecursively = (node, oldPrefix, newPrefix) => {
+    node.path = newPrefix + node.path.slice(oldPrefix.length);
+    if (Array.isArray(node.childlen)) {
+        for (const child of node.childlen) {
+            updatePathsRecursively(child, oldPrefix, newPrefix);
+        }
+    }
 };
 
 // ===== FORMATTING UTILITIES =====
@@ -197,6 +239,7 @@ export const findNodeByPath = (nodes, targetPath) => {
  */
 export const getSize = (filesize, is_dir) => {
     if (is_dir) return "";
+    if (filesize === 0) return "0 Bytes";
 
     const k = 1024;
     const sizes = ["Bytes", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
@@ -210,35 +253,28 @@ export const formatBytes = (bytes) => {
     return new Intl.NumberFormat("en-US").format(bytes) + " bytes";
 };
 
-export const getTimeStr = (time, format = "YMD", withNanos = false) => {
+export const getTimeStr = (time, format = "YMD", nanos = null) => {
     if (!time) return "unknown";
-
-    // Seconds + Decimals
-    const secInt = Math.floor(time);
-    const frac = time - secInt; // decimal part
-
-    // Convert to ns
-    const nanos = BigInt(Math.round(frac * 1e9));
 
     let locale;
     switch (format) {
         case "MDY":
-            locale = "en-US"; // month-day-year
+            locale = "en-US";
             break;
         case "YMD":
-            locale = "ja-JP"; // year-month-day
+            locale = "ja-JP";
             break;
         case "DMY":
         default:
-            locale = "en-GB"; // day-month-year
+            locale = "en-GB";
     }
 
-    const d = new Date(secInt * 1000);
+    const d = new Date(time * 1000);
 
-    if (!withNanos) {
+    if (nanos === null) {
         return d.toLocaleString(locale);
     } else {
-        const offsetMin = -d.getTimezoneOffset(); // JSTなら +540
+        const offsetMin = -d.getTimezoneOffset();
         const sign = offsetMin >= 0 ? "+" : "-";
         const hh = String(Math.floor(Math.abs(offsetMin) / 60)).padStart(2, "0");
         const mm = String(Math.abs(offsetMin) % 60).padStart(2, "0");
@@ -250,7 +286,6 @@ export const getTimeStr = (time, format = "YMD", withNanos = false) => {
             String(d.getSeconds()).padStart(2, "0"),
         ].join(":");
 
-        // 9 桁のナノ秒文字列
         const fracStr = nanos.toString().padStart(9, "0");
 
         return `${dateStr} ${timeStr}.${fracStr} ${tzStr}`;
@@ -301,6 +336,19 @@ export const getDummyFileContent = (filename) => {
 };
 
 // ===== TEST UTILITIES =====
+
+/**
+ * Create a deferred promise for deterministic async synchronization in route mocks.
+ */
+export function createDeferred() {
+    let resolve;
+    let reject;
+    const promise = new Promise((res, rej) => {
+        resolve = res;
+        reject = rej;
+    });
+    return { promise, resolve, reject };
+}
 
 /**
  * Freeze time for testing purposes.
@@ -355,62 +403,93 @@ export function symbolicToOctal(symbolic) {
 }
 
 // ===== ROUTE MOCKING =====
+
 /**
- * Sets up a mock route for testing API endpoints
- * @param {Object} page - Playwright page object
- * @param {string} mockUrl - URL pattern to mock
- * @param {string} method - HTTP method
- * @param {string} pathname - Path to match
- * @param {Object} options - Mock configuration options
+ * Intercepts a specific API endpoint on `page` and records every matched request
+ * without performing assertions inside the route callback.
+ * Non-matching requests fall back to underlying context/page routes.
  */
-export async function mockRoute(
+export async function mockEndpoint(
     page,
-    mockUrl,
     method,
     pathname,
     {
-        validateBody,
         statusCode = 200,
         contentType = "application/json",
-        response = JSON.stringify({}),
+        response = "",
+        headers,
+        match,
+        onRequest,
     } = {}
 ) {
-    await page.route(mockUrl, async (route, request) => {
-        if (!request.url().includes(pathname) || request.method() !== method) {
-            return await handleRoute(route, request);
+    const calls = [];
+    const expectedMethod = method.toUpperCase();
+    const normalizedExpected = pathname ? normalizePath(pathname) : null;
+
+    await page.route(`${API_URL}/**`, async (route, request) => {
+        const requestUrl = new URL(request.url());
+        const decodedPath = normalizePath(decodeURIComponent(requestUrl.pathname));
+
+        const methodMatches = request.method().toUpperCase() === expectedMethod;
+        const pathMatches = match
+            ? match(requestUrl, decodedPath)
+            : decodedPath === normalizedExpected;
+
+        if (!methodMatches || !pathMatches) {
+            return await route.fallback();
         }
 
-        console.log("[MOCK]", pathname, method, statusCode);
-        console.log("[MOCK] request.url()", request.url());
-
-        if (validateBody && request.postData()) {
+        const postData = request.postData();
+        let jsonBody = null;
+        if (postData) {
             try {
-                const body = JSON.parse(request.postData());
-                validateBody(body);
-            } catch (error) {
-                console.warn("Failed:", error);
-                throw error;
+                jsonBody = JSON.parse(postData);
+            } catch {
+                jsonBody = null;
             }
         }
 
-        await route.fulfill({
+        const callRecord = {
+            method: request.method(),
+            url: request.url(),
+            pathname: decodedPath,
+            searchParams: requestUrl.searchParams,
+            postData,
+            json: jsonBody,
+            headers: request.headers(),
+        };
+        calls.push(callRecord);
+
+        if (onRequest) {
+            await onRequest(route, request, callRecord);
+            return;
+        }
+
+        const fulfillOptions = {
             status: statusCode,
-            contentType,
             body: response,
-        });
+        };
+        if (headers) {
+            fulfillOptions.headers = headers;
+        } else if (contentType) {
+            fulfillOptions.contentType = contentType;
+        }
+
+        await route.fulfill(fulfillOptions);
+    });
+
+    return calls;
+}
+
+export async function mockMoveRoute(page, { statusCode = 200, response = "" } = {}) {
+    return mockEndpoint(page, "POST", "/move", {
+        statusCode,
+        contentType: statusCode >= 400 ? "application/json" : "text/plain",
+        response: typeof response === "string" ? response : JSON.stringify(response),
     });
 }
 
 // ===== ROUTE HANDLERS =====
-
-/**
- * Initialize file structure data if not already loaded
- */
-const initializeFileStructureData = () => {
-    if (fileStructureData === null) {
-        fileStructureData = transformMtimeToUnix(JSON.parse(fs.readFileSync(DIR_LIST, "utf-8")));
-    }
-};
 
 export const toNDJSON = (data) => {
     if (Array.isArray(data)) return data.map((x) => JSON.stringify(x)).join("\n") + "\n";
@@ -418,409 +497,490 @@ export const toNDJSON = (data) => {
     return "";
 };
 
-/**
- * Handle /dir/ GET requests
- */
-const handleDirGetRoute = async (route, url, requestUrl) => {
-    console.log("[MOCK] /dir/", url);
-    const path = url.split("/dir/", 2)[1].split("?")[0];
-    const effperm = requestUrl.searchParams.get("effperm");
-
-    if (effperm) {
-        await route.fulfill({
-            status: 200,
-            contentType: "application/x-ndjson",
-            body: toNDJSON([{ perms: "rwx" }]),
-        });
-        console.log("return /dir/", [{ perms: "rwx" }]);
-        return;
-    }
-
-    const jsonData = findChildrenByPath(fileStructureData, path);
-    if (jsonData !== null) {
-        await route.fulfill({
-            status: 200,
-            contentType: "application/x-ndjson",
-            body: toNDJSON(jsonData),
-        });
-    } else {
-        const responseData = {
-            detail: {
-                command: "gfls",
-                message: "no such file or directory",
-                stdout: "",
-                stderr: "",
-            },
-        };
-        await route.fulfill({
-            status: 404,
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(responseData),
-        });
-    }
-};
-
-/**
- * Handle /dir/ PUT requests (create directory)
- */
-const handleDirPutRoute = async (route, url) => {
-    console.log("[MOCK] /dir/", url);
-    const dirPath = decodeURIComponent(url.split("/dir/")[1].split("?")[0]);
-
-    await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ message: `Directory '${dirPath}' created successfully.` }),
+const gfarmErrorBody = (command, message) =>
+    JSON.stringify({
+        detail: {
+            command,
+            message,
+            stdout: "",
+            stderr: [message],
+        },
     });
-};
 
 /**
- * Handle /user_info requests
+ * Create a stateful route handler backed by an isolated copy of fileStructureData.
  */
-const handleUserInfoRoute = async (route, url) => {
-    console.log("[MOCK] /user_info", url);
-    await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ username: "user1", home_directory: "/documents" }),
-    });
-};
+export function createRouteHandler({
+    fileStructure = loadFileStructure(),
+    unhandledRequests = [],
+} = {}) {
+    const handleDirGetRoute = async (route, requestUrl) => {
+        const rawDirPath = requestUrl.pathname.replace(/^\/dir/, "") || "/";
+        const dirPath = normalizePath(decodeURIComponent(rawDirPath));
+        const effperm = requestUrl.searchParams.get("effperm");
+        const showHidden = requestUrl.searchParams.get("show_hidden");
+        const outputFormat = requestUrl.searchParams.get("output_format") || "json";
 
-/**
- * Handle /attr/ GET requests
- */
-const handleAttrRoute = async (route, url) => {
-    console.log("[MOCK] /attr/", url);
-    const filePath = decodeURIComponent(url.split("/attr/", 2)[1].split("?")[0]);
-    const fileNode = findNodeByPath(fileStructureData, filePath);
+        if (effperm === "on") {
+            await route.fulfill({
+                status: 200,
+                contentType: "application/x-ndjson",
+                body: toNDJSON([{ perms: "rwx" }]),
+            });
+            return;
+        }
 
-    if (fileNode) {
-        const d = new Date(fileNode.mtime_str);
-        const unixtime_f = d.getTime() / 1000;
-        const sec = Math.floor(unixtime_f);
-        const nano = Math.round((unixtime_f - sec) * 1e9);
-        const detailResponse = {
-            File: fileNode.name,
-            Filetype: fileNode.name.includes(".")
-                ? fileNode.name.split(".").pop()
-                : fileNode.is_file
-                  ? "regular file"
-                  : "directory",
-            Size: fileNode.size,
-            Mode: symbolicToOctal(fileNode.mode_str),
-            Access: fileNode.mtime_str,
-            AccessSeconds: sec,
-            AccessNanos: nano,
-            Modify: fileNode.mtime_str,
-            ModifySeconds: sec,
-            ModifyNanos: nano,
-            Change: fileNode.mtime_str,
-            ChangeSeconds: sec,
-            ChangeNanos: nano,
-            Uid: fileNode.uname,
-            Gid: fileNode.gname,
-            MetadataHost: "test-host.local",
-            MetadataPort: 8080,
-            MetadataUser: "testuser",
-            Cksum: 123456,
-            CksumType: "test",
-        };
+        const children = findChildrenByPath(fileStructure, dirPath);
+        if (children !== null) {
+            const filtered =
+                showHidden === "off"
+                    ? children.filter((item) => !item.name.startsWith("."))
+                    : children;
+            if (outputFormat === "plain") {
+                await route.fulfill({
+                    status: 200,
+                    contentType: "text/plain",
+                    body: filtered.map((item) => item.name).join("\n"),
+                });
+            } else {
+                await route.fulfill({
+                    status: 200,
+                    contentType: "application/x-ndjson",
+                    body: toNDJSON(filtered),
+                });
+            }
+        } else {
+            await route.fulfill({
+                status: 404,
+                contentType: "application/json",
+                body: gfarmErrorBody("gfls", "no such file or directory"),
+            });
+        }
+    };
+
+    const handleDirPutRoute = async (route, requestUrl) => {
+        const rawDirPath = requestUrl.pathname.replace(/^\/dir/, "") || "/";
+        const dirPath = normalizePath(decodeURIComponent(rawDirPath));
+        const parentPath = path.posix.dirname(dirPath);
+        const name = path.posix.basename(dirPath);
+
+        addNodeToParent(fileStructure, parentPath, {
+            mode_str: "drwxr-xr-x",
+            is_file: false,
+            is_dir: true,
+            is_sym: false,
+            nlink: 2,
+            uname: "user1",
+            gname: "users",
+            size: 4096,
+            mtime: Math.floor(Date.now() / 1000),
+            mtime_str: "Jun  1 12:00:00 2025",
+            name,
+            path: dirPath,
+            childlen: [],
+        });
+
+        await route.fulfill({
+            status: 200,
+            contentType: "text/plain",
+            body: "",
+        });
+    };
+
+    const handleUserInfoRoute = async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+                username: "user1",
+                loginname: "user1",
+                home_directory: "/documents",
+            }),
+        });
+    };
+
+    const handleAttrRoute = async (route, requestUrl) => {
+        const rawPath = requestUrl.pathname.replace(/^\/attr/, "") || "/";
+        const filePath = normalizePath(decodeURIComponent(rawPath));
+        const fileNode = findNodeByPath(fileStructure, filePath);
+
+        if (fileNode) {
+            const d = new Date(fileNode.mtime_str);
+            const sec = Math.floor(d.getTime() / 1000);
+            const filetype = fileNode.is_sym
+                ? "symbolic link"
+                : fileNode.is_dir
+                  ? "directory"
+                  : "regular file";
+
+            const detailResponse = {
+                File: fileNode.path,
+                Filetype: filetype,
+                Size: fileNode.size,
+                Mode: symbolicToOctal(fileNode.mode_str),
+                Ncopy: 1,
+                Access: fileNode.mtime_str,
+                AccessSeconds: sec,
+                AccessNanos: MOCK_NANOS,
+                Modify: fileNode.mtime_str,
+                ModifySeconds: sec,
+                ModifyNanos: MOCK_NANOS,
+                Change: fileNode.mtime_str,
+                ChangeSeconds: sec,
+                ChangeNanos: MOCK_NANOS,
+                Uid: fileNode.uname,
+                Gid: fileNode.gname,
+                MetadataHost: "test-host.local",
+                MetadataPort: "601",
+                MetadataUser: "testuser",
+                Cksum: "123456",
+                CksumType: "test",
+            };
+            if (fileNode.is_sym && requestUrl.searchParams.get("check_symlink") === "on") {
+                detailResponse.LinkPath = fileNode.linkname || fileNode.path;
+            }
+
+            await route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify(detailResponse),
+            });
+        } else {
+            await route.fulfill({
+                status: 404,
+                contentType: "application/json",
+                body: gfarmErrorBody("gfstat", "no such file or directory"),
+            });
+        }
+    };
+
+    const handleSymlinkGetRoute = async (route, requestUrl) => {
+        const rawPath = requestUrl.pathname.replace(/^\/symlink/, "") || "/";
+        const symlinkPath = normalizePath(decodeURIComponent(rawPath));
+        const targetNode = findNodeByPath(fileStructure, symlinkPath);
+
+        if (!targetNode) {
+            await route.fulfill({
+                status: 404,
+                contentType: "application/json",
+                body: gfarmErrorBody("gfstat", "no such file or directory"),
+            });
+            return;
+        }
+
+        const resolved = targetNode.is_sym
+            ? findNodeByPath(fileStructure, targetNode.linkname)
+            : targetNode;
+
+        if (!resolved) {
+            await route.fulfill({
+                status: 404,
+                contentType: "application/json",
+                body: gfarmErrorBody("gfstat", "no such file or directory"),
+            });
+            return;
+        }
 
         await route.fulfill({
             status: 200,
             contentType: "application/json",
-            body: JSON.stringify(detailResponse),
+            body: JSON.stringify({
+                name: resolved.name,
+                path: resolved.path,
+                is_file: !!resolved.is_file,
+                is_dir: !!resolved.is_dir,
+                is_sym: false,
+            }),
         });
-    } else {
+    };
+
+    const handleSymlinkPostRoute = async (route, request) => {
+        const body = request.postDataJSON?.();
+        if (body?.destination) {
+            const destPath = normalizePath(body.destination);
+            const parentPath = path.posix.dirname(destPath);
+            const name = path.posix.basename(destPath);
+            addNodeToParent(fileStructure, parentPath, {
+                mode_str: "lrwxrwxrwx",
+                is_file: false,
+                is_dir: false,
+                is_sym: true,
+                linkname: body.source || "",
+                nlink: 1,
+                uname: "user1",
+                gname: "users",
+                size: (body.source || "").length,
+                mtime: Math.floor(Date.now() / 1000),
+                mtime_str: "Jun  1 12:00:00 2025",
+                name,
+                path: destPath,
+            });
+        }
         await route.fulfill({
-            status: 404,
-            contentType: "application/json",
-            body: JSON.stringify({ error: "File not found" }),
+            status: 200,
+            contentType: "text/plain",
+            body: "",
         });
-    }
-};
+    };
 
-/**
- * Handle /file/ GET requests
- */
-const handleFileGetRoute = async (route, url, requestUrl) => {
-    console.log("[MOCK] /file/", url);
-    const filePath = decodeURIComponent(url.split("/file/")[1].split("?")[0]);
-    const filename = filePath.split("/").pop();
-    const ext = filename.split(".").pop();
-    const action = requestUrl.searchParams.get("action") || "view";
+    const handleFileGetRoute = async (route, requestUrl) => {
+        const rawPath = requestUrl.pathname.replace(/^\/file/, "") || "/";
+        const filePath = decodeURIComponent(rawPath).replace(/^\/+/, "");
+        const filename = filePath.split("/").pop();
+        const ext = filename.includes(".") ? filename.split(".").pop().toLowerCase() : "";
+        const action = requestUrl.searchParams.get("action") || "view";
 
-    console.log("filename", filename);
+        if (filename === "deleted_file.txt") {
+            await route.fulfill({
+                status: 404,
+                contentType: "application/json",
+                body: gfarmErrorBody("gfexport", `File not found: /${filePath}`),
+            });
+            return;
+        }
 
-    // Handle special test files
-    if (filename === "deleted_file.txt") {
+        let body;
+        let contentType;
+        if (filename.includes("empty")) {
+            body = "";
+            contentType = "text/plain";
+        } else if (ext === "html") {
+            body = `<!DOCTYPE html><html><body><h1>${filePath} Content</h1><p>This file was displayed in a new tab.</p></body></html>`;
+            contentType = "text/html";
+        } else if (ext === "pdf") {
+            body = Buffer.from(
+                "JVBERi0xLjQKJdDUxdgKMSAwIG9iagogIDw8L1BhZ2VzIDIgMCBSD4u (a very short PDF string) ...",
+                "base64"
+            );
+            contentType = "application/pdf";
+        } else {
+            body = `This is the content of /${filePath}.`;
+            contentType = "text/plain";
+        }
+
+        const headers = {
+            "content-type": contentType,
+            "content-length": Buffer.byteLength(body).toString(),
+        };
+
+        if (action === "download") {
+            const asciiFallback = filename.replace(/[^\x20-\x7e]/g, "");
+            const encoded = encodeURIComponent(filename);
+            headers["content-disposition"] =
+                `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`;
+        }
+
         await route.fulfill({
-            status: 404,
-            contentType: "application/json",
-            body: JSON.stringify({ error: `File not found: ${filePath}` }),
+            status: 200,
+            body,
+            headers,
         });
-        return;
-    }
+    };
 
-    if (filePath.endsWith("backend_disconnect.txt")) {
-        await route.continue();
-        return;
-    }
+    const handleFilePutRoute = async (route, requestUrl) => {
+        const rawPath = requestUrl.pathname.replace(/^\/file/, "") || "/";
+        const filePath = normalizePath(decodeURIComponent(rawPath));
+        const parentPath = path.posix.dirname(filePath);
+        const name = path.posix.basename(filePath);
 
-    if (filePath.endsWith("cancellable_file.txt")) {
-        return;
-    }
+        addNodeToParent(fileStructure, parentPath, {
+            mode_str: "-rw-r--r--",
+            is_file: true,
+            is_dir: false,
+            is_sym: false,
+            nlink: 1,
+            uname: "user1",
+            gname: "users",
+            size: 100,
+            mtime: Math.floor(Date.now() / 1000),
+            mtime_str: "Jun  1 12:00:00 2025",
+            name,
+            path: filePath,
+        });
 
-    // Generate mock content based on file type
-    const mockContent = `This is the content of /${filePath}.`;
-    const mockContent_html = `<!DOCTYPE html><html><body><h1>${filePath} Content</h1><p>This file was displayed in a new tab.</p></body></html>`;
-    const mockContent_pdf = Buffer.from(
-        "JVBERi0xLjQKJdDUxdgKMSAwIG9iagogIDw8L1BhZ2VzIDIgMCBSD4u (a very short PDF string) ...",
-        "base64"
-    );
-
-    const headers = {};
-    if (ext === "html") {
-        headers["content-type"] = "text/html";
-        headers["content-length"] = mockContent_html.length.toString();
-    } else if (ext === "pdf") {
-        headers["content-type"] = "application/pdf";
-        headers["content-length"] = mockContent_pdf.length.toString();
-    } else {
-        headers["content-type"] = "text/plain";
-        headers["content-length"] = mockContent.length.toString();
-    }
-
-    if (action === "download") {
-        const encoded = encodeURIComponent(filename);
-        headers["content-disposition"] = `attachment; filename*=UTF-8''"${encoded}"`;
-    }
-
-    if (filename.includes("empty")) {
         await route.fulfill({
             status: 200,
             body: "",
-            headers,
         });
-    } else {
+    };
+
+    const handleFileDeleteRoute = async (route, requestUrl) => {
+        const rawPath = requestUrl.pathname.replace(/^\/file/, "") || "/";
+        const targetPath = normalizePath(decodeURIComponent(rawPath));
+        removeNodeByPath(fileStructure, targetPath);
+
         await route.fulfill({
             status: 200,
-            body: mockContent,
+            contentType: "text/plain",
+            body: "",
+        });
+    };
+
+    const handleZipRoute = async (route, request) => {
+        const postData = request.postData();
+        const parsed = querystring.parse(postData);
+        const files = Array.isArray(parsed["paths"]) ? parsed["paths"] : [parsed["paths"]];
+
+        const AdmZip = require("adm-zip");
+        const zip = new AdmZip();
+
+        for (const item of files) {
+            const node = findNodeByPath(fileStructure, item);
+
+            if (node) {
+                const entryPath = node.name;
+
+                if (node.is_file) {
+                    let fileContent = `Dummy content for ${node.path}. Size: ${getSize(node.size, node.is_dir)}`;
+                    if (node.size === 0) {
+                        fileContent = "";
+                    }
+                    zip.addFile(entryPath, Buffer.from(fileContent, "utf8"));
+                } else {
+                    zip.addFile(entryPath + "/", Buffer.from(""));
+                }
+            } else {
+                console.warn(`[ROUTE MOCK] Path not found in mock data: ${item}`);
+            }
+        }
+
+        const zipContentBuffer = zip.toBuffer();
+        const headers = {
+            "Content-Type": "application/zip",
+            "Content-Disposition": `attachment; filename=${ZIPNAME}`,
+            "Content-Length": zipContentBuffer.length.toString(),
+        };
+
+        await route.fulfill({
+            status: 200,
+            body: zipContentBuffer,
             headers,
         });
-    }
-};
+    };
 
-/**
- * Handle /file/ DELETE requests
- */
-const handleFileDeleteRoute = async (route, url) => {
-    console.log("[MOCK] /file/", url);
-    await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({}),
-    });
-};
+    const handleUsersRoute = async (route, requestUrl) => {
+        const longFormat = requestUrl.searchParams.get("long_format");
+        const users = ["userA", "userB", "userC", "admin"];
+        const list =
+            longFormat === "on" || longFormat === "true"
+                ? users.map((u) => ({
+                      id: u,
+                      name: u,
+                      home_directory: `/home/${u}`,
+                      identifier: u,
+                  }))
+                : users;
+        await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({ list }),
+        });
+    };
 
-/**
- * Handle /zip POST requests
- */
-const handleZipRoute = async (route, request, url) => {
-    console.log("[MOCK] /zip/", url);
-    const postData = request.postData();
-    const parsed = querystring.parse(postData);
-    const files = Array.isArray(parsed["paths"]) ? parsed["paths"] : [parsed["paths"]];
-    console.debug("Intercepted /zip POST data:", files);
+    const handleGroupsRoute = async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({ list: ["groupA", "groupB", "developers", "testers"] }),
+        });
+    };
 
-    const AdmZip = require("adm-zip");
-    const zip = new AdmZip();
+    const handleAclGetRoute = async (route) => {
+        const mockAclData = JSON.parse(fs.readFileSync(ACLIST, "utf-8"));
+        await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({ acl: mockAclData }),
+        });
+    };
 
-    for (const item of files) {
-        const node = findNodeByPath(fileStructureData, item);
+    const handleAclPutRoute = async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: "text/plain",
+            body: "",
+        });
+    };
 
-        if (node) {
-            const entryPath = node.name;
-
-            if (node.is_file) {
-                let fileContent = `Dummy content for ${node.path}. Size: ${getSize(node.size)}`;
-                if (node.size === 0) {
-                    fileContent = "";
-                }
-                zip.addFile(entryPath, fileContent);
-                console.log(`[ROUTE MOCK] Added file to ZIP: ${entryPath}`);
-            } else {
-                zip.addFile(entryPath + "/", Buffer.from(""));
-                console.log(`[ROUTE MOCK] Added directory to ZIP: ${entryPath}`);
+    const handleMoveRoute = async (route, request) => {
+        const body = request.postDataJSON?.();
+        if (body?.source && body?.destination) {
+            const srcPath = normalizePath(body.source);
+            const dstPath = normalizePath(body.destination);
+            const moved = removeNodeByPath(fileStructure, srcPath);
+            if (moved) {
+                moved.name = path.posix.basename(dstPath);
+                updatePathsRecursively(moved, srcPath, dstPath);
+                addNodeToParent(fileStructure, path.posix.dirname(dstPath), moved);
             }
-        } else {
-            console.warn(`[ROUTE MOCK] Path not found in mock data: ${item}`);
         }
-    }
-
-    const zipContentBuffer = zip.toBuffer();
-    const headers = {
-        "Content-Type": "application/zip",
-        "Content-Disposition": `attachment; filename=${ZIPNAME}`,
-        "Content-Length": zipContentBuffer.length.toString(),
+        await route.fulfill({
+            status: 200,
+            contentType: "text/plain",
+            body: "",
+        });
     };
 
-    await route.fulfill({
-        status: 200,
-        body: zipContentBuffer,
-        headers,
-    });
-};
+    return async (route, request) => {
+        const requestUrl = new URL(request.url());
+        const pathname = requestUrl.pathname;
+        const method = request.method().toUpperCase();
 
-/**
- * Handle /users GET requests
- */
-const handleUsersRoute = async (route, url) => {
-    console.log("[MOCK] /users GET", url);
-    await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ list: ["userA", "userB", "userC", "admin"] }),
-    });
-};
-
-/**
- * Handle /groups GET requests
- */
-const handleGroupsRoute = async (route, url) => {
-    console.log("[MOCK] /groups GET", url);
-    await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ list: ["groupA", "groupB", "developers", "testers"] }),
-    });
-};
-
-/**
- * Handle /acl GET requests
- */
-const handleAclGetRoute = async (route, url) => {
-    console.log("[MOCK] /acl GET", url);
-    const mockAclData = JSON.parse(fs.readFileSync(ACLIST, "utf-8"));
-
-    await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ acl: mockAclData }),
-    });
-};
-
-/**
- * Handle /acl POST requests
- */
-const handleAclPostRoute = async (route, url) => {
-    console.log("[MOCK] /acl POST", url);
-    await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ message: "ACL updated successfully" }),
-    });
-};
-
-/**
- * Handle /copy requests
- */
-const handleCopyRoute = async (route, url) => {
-    console.log("[MOCK] /copy", url);
-    const headers = {
-        "content-type": "application/json",
-        "transfer-encoding": "chunked",
+        if (pathname.startsWith("/dir/") && method === "GET") {
+            await handleDirGetRoute(route, requestUrl);
+        } else if (pathname.startsWith("/dir/") && method === "PUT") {
+            await handleDirPutRoute(route, requestUrl);
+        } else if (pathname === "/user_info" && method === "GET") {
+            await handleUserInfoRoute(route);
+        } else if (pathname.startsWith("/attr/") && method === "GET") {
+            await handleAttrRoute(route, requestUrl);
+        } else if (pathname.startsWith("/symlink/") && method === "GET") {
+            await handleSymlinkGetRoute(route, requestUrl);
+        } else if (pathname === "/symlink" && method === "POST") {
+            await handleSymlinkPostRoute(route, request);
+        } else if (pathname.startsWith("/file/") && method === "GET") {
+            await handleFileGetRoute(route, requestUrl);
+        } else if (pathname.startsWith("/file/") && method === "PUT") {
+            await handleFilePutRoute(route, requestUrl);
+        } else if (pathname.startsWith("/file/") && method === "DELETE") {
+            await handleFileDeleteRoute(route, requestUrl);
+        } else if (pathname === "/zip" && method === "POST") {
+            await handleZipRoute(route, request);
+        } else if (pathname === "/users" && method === "GET") {
+            await handleUsersRoute(route, requestUrl);
+        } else if (pathname === "/groups" && method === "GET") {
+            await handleGroupsRoute(route);
+        } else if (pathname.startsWith("/acl/") && method === "GET") {
+            await handleAclGetRoute(route);
+        } else if (pathname.startsWith("/acl/") && method === "PUT") {
+            await handleAclPutRoute(route);
+        } else if (pathname === "/move" && method === "POST") {
+            await handleMoveRoute(route, request);
+        } else {
+            const msg = `Unhandled mock API request: ${method} ${request.url()}`;
+            unhandledRequests.push(msg);
+            console.error(`[MOCK ERROR] ${msg}`);
+            await route.fulfill({
+                status: 501,
+                contentType: "application/json",
+                body: gfarmErrorBody("mock", msg),
+            });
+        }
     };
+}
 
-    let chunks = "";
-    let copied = 0;
-    const total = 1024 * 1024 * 50;
-    const chunkSize = 1024 * 500;
+export async function setupApiMocks(context, options = {}) {
+    const fileStructure = options.fileStructure || loadFileStructure();
+    const unhandledRequests = [];
+    const handler = createRouteHandler({ fileStructure, unhandledRequests });
 
-    while (copied < total) {
-        copied += chunkSize;
-        if (copied > total) copied = total;
-        chunks += JSON.stringify({ copied, total }) + "\n";
-    }
+    await context.route(`${API_URL}/**`, handler);
+    await context.route(`${FRONTEND_URL}/assets/file_icons.json`, (route, request) =>
+        mockFileIcons(route, request)
+    );
 
-    chunks += JSON.stringify({ copied: total, total, done: true }) + "\n";
-
-    await route.fulfill({
-        status: 200,
-        headers,
-        body: chunks,
-    });
-};
-
-/**
- * Handle /move requests
- */
-const handleMoveRoute = async (route, url) => {
-    console.log("[MOCK] /move", url);
-    await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({}),
-    });
-};
-
-/**
- * Mock route handler for intercepting and simulating API requests during tests.
- *
- * This function acts as a central mock server for various API endpoints.
- * It intercepts network requests made by Playwright and returns mock responses
- * depending on the request URL and method.
- *
- * @param {import('@playwright/test').Route} route - The intercepted Playwright route object
- * @param {import('@playwright/test').Request} request - The intercepted Playwright request object
- * @returns {Promise<void>}
- */
-export const handleRoute = async (route, request) => {
-    const url = request.url();
-    const method = request.method();
-    const requestUrl = new URL(url);
-    console.log("url", url);
-
-    initializeFileStructureData();
-
-    if (!url.includes("/file/") && (url.endsWith(".js") || url.endsWith(".mjs"))) {
-        return route.fallback();
-    }
-    if (!url.includes("/file/") && url.endsWith(".css")) {
-        return route.fallback();
-    }
-
-    // Route to appropriate handler based on URL and method
-    if (url.includes("/dir/") && method === "GET") {
-        await handleDirGetRoute(route, url, requestUrl);
-    } else if (url.includes("/dir/") && method === "PUT") {
-        await handleDirPutRoute(route, url);
-    } else if (url.includes("/user_info")) {
-        await handleUserInfoRoute(route, url);
-    } else if (url.includes("/attr/") && method === "GET") {
-        await handleAttrRoute(route, url);
-    } else if (url.includes("/file/") && method === "GET") {
-        await handleFileGetRoute(route, url, requestUrl);
-    } else if (url.includes("/file/") && method === "DELETE") {
-        await handleFileDeleteRoute(route, url);
-    } else if (url.includes("/zip") && method === "POST") {
-        await handleZipRoute(route, request, url);
-    } else if (url.includes("/users") && method === "GET") {
-        await handleUsersRoute(route, url);
-    } else if (url.includes("/groups") && method === "GET") {
-        await handleGroupsRoute(route, url);
-    } else if (url.includes("/acl") && method === "GET") {
-        await handleAclGetRoute(route, url);
-    } else if (url.includes("/acl") && method === "PUT") {
-        await handleAclPostRoute(route, url);
-    } else if (url.includes("/copy") && method === "PUT") {
-        await handleCopyRoute(route, url);
-    } else if (url.includes("/move") && method === "POST") {
-        await handleMoveRoute(route, url);
-    } else {
-        await route.continue();
-    }
-};
+    return { fileStructure, unhandledRequests };
+}
 
 export async function mockFileIcons(route, request) {
     const url = request.url();

@@ -241,7 +241,7 @@
                         "size": 0,
                         "mtime_str": "Apr  8 05:48:28 2025",
                         "name": "empty_file.txt",
-                        "path": "/empty_file.txt"
+                        "path": "/error_test/empty_file.txt"
                     },
                     {
                         "mode_str": "drwxr-xr-x",
@@ -254,7 +254,7 @@
                         "size": 0,
                         "mtime_str": "May 30 18:00:00 2025",
                         "name": "empty_dir",
-                        "path": "/empty_dir",
+                        "path": "/error_test/empty_dir",
                         "childlen" : []
                     },
                     {
@@ -268,33 +268,64 @@
                         "size": 100,
                         "mtime_str": "Apr  8 05:48:28 2025",
                         "name": "deleted_file.txt",
-                        "path": "/deleted_file.txt"
+                        "path": "/error_test/deleted_file.txt"
+                    }
+                ]
+            },
+            {
+                "mode_str": "drwxr-xr-x",
+                "is_file": false,
+                "is_dir": true,
+                "is_sym": false,
+                "nlink": 3,
+                "uname": "user4",
+                "gname": "users",
+                "size": 4096,
+                "mtime_str": "May 30 18:00:00 2025",
+                "name": "symlinks",
+                "path": "/symlinks",
+                "childlen" : [
+                    {
+                        "mode_str": "lrwxrwxrwx",
+                        "is_file": false,
+                        "is_dir": false,
+                        "is_sym": true,
+                        "linkname": "/documents/report.docx",
+                        "nlink": 1,
+                        "uname": "user1",
+                        "gname": "users",
+                        "size": 22,
+                        "mtime_str": "Jun  1 10:00:00 2025",
+                        "name": "link_to_file",
+                        "path": "/symlinks/link_to_file"
                     },
                     {
-                        "mode_str": "-rwxrwxrwt",
-                        "is_file": true,
+                        "mode_str": "lrwxrwxrwx",
+                        "is_file": false,
                         "is_dir": false,
-                        "is_sym": false,
-                        "nlink": 2,
-                        "uname": "node",
-                        "gname": "gfarmadm",
-                        "size": 100,
-                        "mtime_str": "Apr  8 05:48:28 2025",
-                        "name": "backend_disconnect.txt",
-                        "path": "/backend_disconnect.txt"
+                        "is_sym": true,
+                        "linkname": "/documents",
+                        "nlink": 1,
+                        "uname": "user1",
+                        "gname": "users",
+                        "size": 10,
+                        "mtime_str": "Jun  1 10:00:00 2025",
+                        "name": "link_to_dir",
+                        "path": "/symlinks/link_to_dir"
                     },
                     {
-                        "mode_str": "-rwxrwxrwt",
-                        "is_file": true,
+                        "mode_str": "lrwxrwxrwx",
+                        "is_file": false,
                         "is_dir": false,
-                        "is_sym": false,
-                        "nlink": 2,
-                        "uname": "node",
-                        "gname": "gfarmadm",
-                        "size": 100,
-                        "mtime_str": "Apr  8 05:48:28 2025",
-                        "name": "cancellable_file.txt",
-                        "path": "/cancellable_file.txt"
+                        "is_sym": true,
+                        "linkname": "/nonexistent/target",
+                        "nlink": 1,
+                        "uname": "user1",
+                        "gname": "users",
+                        "size": 19,
+                        "mtime_str": "Jun  1 10:00:00 2025",
+                        "name": "broken_link",
+                        "path": "/symlinks/broken_link"
                     }
                 ]
             },

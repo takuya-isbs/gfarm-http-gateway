@@ -1,33 +1,26 @@
 const { test, expect } = require("./api-coverage-fixture");
 
 const {
-    handleRoute,
-    mockRoute,
+    setupApiMocks,
+    mockEndpoint,
+    mockMoveRoute,
+    createDeferred,
     clickMenuItemFromView,
     clickMenuItemFromMenu,
     checkItem,
-    API_URL,
     FRONTEND_URL,
     ROUTE_STORAGE,
 } = require("./test_func");
 
-async function mockMoveRoute(page, { source, destination, statusCode = 200, mockResponse = {} }) {
-    await mockRoute(page, `${API_URL}/**`, "POST", "/move", {
-        validateBody: (body) => {
-            expect(typeof body.source).toBe("string");
-            expect(typeof body.destination).toBe("string");
-            if (source) expect(body.source).toBe(source);
-            if (destination) expect(body.destination).toBe(destination);
-        },
-        statusCode,
-        contentType: "application/json",
-        response: JSON.stringify(mockResponse),
-    });
-}
+let mockState = null;
 
 // === Tests ===
 test.beforeEach(async ({ context }) => {
-    await context.route(`${API_URL}/**`, (route, request) => handleRoute(route, request));
+    mockState = await setupApiMocks(context);
+});
+
+test.afterEach(() => {
+    expect(mockState.unhandledRequests).toEqual([]);
 });
 
 test("Should move a single file from the context menu", async ({ page }) => {
@@ -35,29 +28,34 @@ test("Should move a single file from the context menu", async ({ page }) => {
     const destinationDirectory = "/images";
     const testFileName = "meeting_notes.txt";
 
-    await mockMoveRoute(page, {
-        source: currentDirectory + "/" + testFileName,
-        destination: destinationDirectory + "/" + testFileName,
-    });
-
     await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
+    await expect(page.getByTestId(`row-${testFileName}`)).toBeVisible();
 
     await clickMenuItemFromView(page, testFileName, "move");
 
     const moveModal = page.locator('[data-testid="move-modal"]');
     await expect(moveModal).toBeVisible();
 
-    const destdirInput = moveModal.locator('[id="move-dest-input"]');
-    await destdirInput.fill(destinationDirectory);
+    await moveModal.locator('[id="move-dest-input"]').fill(destinationDirectory);
 
-    await page.waitForTimeout(100);
-
-    // Click confirm
     const confirmButton = moveModal.locator('[data-testid="modal-button-confirm"]');
     await expect(confirmButton).toBeVisible();
-    await confirmButton.click();
 
+    const moveRequest = page.waitForRequest(
+        (req) => req.method() === "POST" && new URL(req.url()).pathname === "/move"
+    );
+    const moveResponse = page.waitForResponse(
+        (res) => res.request().method() === "POST" && new URL(res.url()).pathname === "/move"
+    );
+    await confirmButton.click();
+    const req = await moveRequest;
+    expect(req.postDataJSON()).toEqual({
+        source: `${currentDirectory}/${testFileName}`,
+        destination: `${destinationDirectory}/${testFileName}`,
+    });
+    expect((await moveResponse).status()).toBe(200);
     await expect(moveModal).not.toBeVisible();
+    await expect(page.getByTestId(`row-${testFileName}`)).not.toBeVisible();
 });
 
 test("Should move multiple files from the actions menu", async ({ page }) => {
@@ -65,19 +63,16 @@ test("Should move multiple files from the actions menu", async ({ page }) => {
     const destinationDirectory = "/images";
     const filesToMove = ["report.docx", "meeting_notes.txt"];
 
-    const seen = [];
-    await page.route(`${API_URL}/move`, async (route) => {
-        console.log(`[ROUTE MOCK] Simulating move`);
-        const request = route.request();
-        const body = request.postDataJSON();
-
-        seen.push(body.source);
-        await page.waitForTimeout(1000);
-        await route.fulfill({
-            status: 200,
-            contentType: "application/json",
-            body: JSON.stringify({}),
-        });
+    const gate = createDeferred();
+    const calls = await mockEndpoint(page, "POST", "/move", {
+        onRequest: async (route) => {
+            await gate.promise;
+            await route.fulfill({
+                status: 200,
+                contentType: "text/plain",
+                body: "",
+            });
+        },
     });
 
     await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
@@ -90,27 +85,23 @@ test("Should move multiple files from the actions menu", async ({ page }) => {
 
     const moveModal = page.locator('[data-testid="move-modal"]');
     await expect(moveModal).toBeVisible();
+    await moveModal.locator('[id="move-dest-input"]').fill(destinationDirectory);
 
-    const destdirInput = moveModal.locator('[id="move-dest-input"]');
-    await destdirInput.fill(destinationDirectory);
-
-    await page.waitForTimeout(100);
-
-    // Click confirm
     const confirmButton = moveModal.locator('[data-testid="modal-button-confirm"]');
     await expect(confirmButton).toBeVisible();
     await confirmButton.click();
 
     await expect(moveModal).not.toBeVisible();
-
-    // Should show deleting overlay
     await expect(page.locator('[data-testid="global-overlay"]')).toBeVisible();
-    await expect(page.locator('[data-testid="global-overlay"]')).not.toBeVisible();
 
-    // Wait until exactly N POST /move requests were made (one per file)
-    await expect.poll(() => seen.length, { timeout: 5000 }).toBe(filesToMove.length);
-    const seenNames = new Set(seen.map((b) => b.split("/").pop()));
-    expect(seenNames).toEqual(new Set(filesToMove));
+    await expect.poll(() => calls.length).toBe(1);
+    gate.resolve();
+
+    await expect(page.locator('[data-testid="global-overlay"]')).not.toBeVisible();
+    await expect.poll(() => calls.length).toBe(filesToMove.length);
+
+    const movedSources = new Set(calls.map((c) => c.json.source));
+    expect(movedSources).toEqual(new Set(filesToMove.map((f) => `${currentDirectory}/${f}`)));
 });
 
 test("Should show name conflict prompt when destination has duplicate files", async ({ page }) => {
@@ -128,13 +119,8 @@ test("Should show name conflict prompt when destination has duplicate files", as
 
     const moveModal = page.locator('[data-testid="move-modal"]');
     await expect(moveModal).toBeVisible();
+    await moveModal.locator('[id="move-dest-input"]').fill(destinationDirectory);
 
-    const destdirInput = moveModal.locator('[id="move-dest-input"]');
-    await destdirInput.fill(destinationDirectory);
-
-    await page.waitForTimeout(100);
-
-    // Click confirm
     const confirmButton = moveModal.locator('[data-testid="modal-button-confirm"]');
     await expect(confirmButton).toBeVisible();
     await confirmButton.click();
@@ -150,11 +136,25 @@ test("Should show name conflict prompt when destination has duplicate files", as
     const notDuplicateFileName = overwriteModal.locator(`[id="current-${filesToMove[1]}"]`);
     await expect(notDuplicateFileName).not.toBeVisible();
 
-    const conflict_confirmButton = overwriteModal.locator('[data-testid="modal-button-confirm"]');
-    await expect(conflict_confirmButton).toBeVisible();
-    await conflict_confirmButton.click();
+    const conflictConfirmButton = overwriteModal.locator('[data-testid="modal-button-confirm"]');
+    await expect(conflictConfirmButton).toBeVisible();
 
+    const moveRequest = page.waitForRequest(
+        (req) => req.method() === "POST" && new URL(req.url()).pathname === "/move"
+    );
+    const moveResponse = page.waitForResponse(
+        (res) => res.request().method() === "POST" && new URL(res.url()).pathname === "/move"
+    );
+    await conflictConfirmButton.click();
+    const req = await moveRequest;
+    expect(req.postDataJSON()).toEqual({
+        source: `${currentDirectory}/${filesToMove[1]}`,
+        destination: `${destinationDirectory}/${filesToMove[1]}`,
+    });
+    expect((await moveResponse).status()).toBe(200);
     await expect(overwriteModal).not.toBeVisible();
+    await expect(page.getByTestId(`row-${filesToMove[0]}`)).toBeVisible();
+    await expect(page.getByTestId(`row-${filesToMove[1]}`)).not.toBeVisible();
 });
 
 test("Should display an error notification when move operation fails", async ({ page }) => {
@@ -162,13 +162,10 @@ test("Should display an error notification when move operation fails", async ({ 
     const destinationDirectory = "/images";
     const testFileName = "meeting_notes.txt";
 
-    await mockMoveRoute(page, {
-        source: currentDirectory + "/" + testFileName,
-        destination: destinationDirectory + "/" + testFileName,
+    const calls = await mockMoveRoute(page, {
         statusCode: 403,
-        contentType: "application/json",
-        mockResponse: {
-            detail: { message: "Permission denied", stdout: "", stderr: "" },
+        response: {
+            detail: { command: "gfmv", message: "Permission denied", stdout: "", stderr: [] },
         },
     });
 
@@ -178,16 +175,17 @@ test("Should display an error notification when move operation fails", async ({ 
 
     const moveModal = page.locator('[data-testid="move-modal"]');
     await expect(moveModal).toBeVisible();
+    await moveModal.locator('[id="move-dest-input"]').fill(destinationDirectory);
 
-    const destdirInput = moveModal.locator('[id="move-dest-input"]');
-    await destdirInput.fill(destinationDirectory);
-
-    await page.waitForTimeout(100);
-
-    // Click confirm
     const confirmButton = moveModal.locator('[data-testid="modal-button-confirm"]');
     await expect(confirmButton).toBeVisible();
+
+    const moveResponse = page.waitForResponse(
+        (res) => res.request().method() === "POST" && new URL(res.url()).pathname === "/move"
+    );
     await confirmButton.click();
+    expect((await moveResponse).status()).toBe(403);
+    expect(calls).toHaveLength(1);
 
     await expect(moveModal).not.toBeVisible();
 
@@ -195,4 +193,21 @@ test("Should display an error notification when move operation fails", async ({ 
     await expect(errorNotification).toBeVisible();
     await expect(errorNotification).toContainText("403");
     await expect(errorNotification).toContainText("Permission denied");
+});
+
+test("Should warn and skip API request when moving to the same directory", async ({ page }) => {
+    const calls = await mockMoveRoute(page);
+
+    await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}/documents`);
+
+    await clickMenuItemFromView(page, "meeting_notes.txt", "move");
+
+    const moveModal = page.locator('[data-testid="move-modal"]');
+    await expect(moveModal).toBeVisible();
+    await moveModal.locator('[data-testid="modal-button-confirm"]').click();
+
+    const notification = page.locator('[data-testid^="notification-"]');
+    await expect(notification).toBeVisible();
+    await expect(notification).toContainText("Destination is the same as current path");
+    expect(calls).toHaveLength(0);
 });

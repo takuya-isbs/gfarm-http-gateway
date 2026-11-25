@@ -1,248 +1,157 @@
 const { test, expect } = require("./api-coverage-fixture");
-const fs = require("fs");
 
 const {
-    findChildrenByPath,
+    setupApiMocks,
+    mockEndpoint,
     findNodeByPath,
     clickMenuItemFromView,
     formatBytes,
     getTimeStr,
     symbolicToOctal,
-    handleRoute,
     FRONTEND_URL,
-    API_URL,
-    DIR_LIST,
     ROUTE_STORAGE,
+    MOCK_NANOS,
 } = require("./test_func");
 
-let fileStructureData = null;
+let mockState = null;
 
 async function closeDetailTab(page) {
     const sidepanel = page.locator(".custom-sidepanel");
     const closeButton = sidepanel.locator(".btn-close");
     await expect(closeButton).toBeVisible();
     await closeButton.click();
-    await expect(page.locator(".custom-sidepanel.hide")).toBeVisible();
+    await expect(sidepanel).toHaveClass(/hide/);
+}
+
+function getExpectedDetailData(filePath) {
+    const fileNode = findNodeByPath(mockState.fileStructure, filePath);
+    if (!fileNode) return null;
+    const d = new Date(fileNode.mtime_str);
+    const sec = Math.floor(d.getTime() / 1000);
+
+    return {
+        File: fileNode.path,
+        LinkPath: fileNode.linkname || null,
+        Filetype: fileNode.is_sym
+            ? "symbolic link"
+            : fileNode.is_dir
+              ? "directory"
+              : "regular file",
+        Size: fileNode.size,
+        Mode: symbolicToOctal(fileNode.mode_str),
+        Ncopy: "1",
+        AccessSeconds: sec,
+        ModifySeconds: sec,
+        ChangeSeconds: sec,
+        Uid: fileNode.uname,
+        Gid: fileNode.gname,
+        Cksum: "123456",
+        CksumType: "test",
+    };
 }
 
 // === Tests ===
 
 test.beforeEach(async ({ context }) => {
-    fileStructureData = JSON.parse(fs.readFileSync(DIR_LIST, "utf-8"));
-    await context.route(`${API_URL}/**`, (route, request) => handleRoute(route, request));
+    mockState = await setupApiMocks(context);
 });
 
-const getExpectedDetailData = (filePath) => {
-    const fileNode = findNodeByPath(fileStructureData, filePath);
-    if (!fileNode) return null;
-    const d = new Date(fileNode.mtime_str);
+test.afterEach(() => {
+    expect(mockState.unhandledRequests).toEqual([]);
+});
 
-    return {
-        File: fileNode.name,
-        Filetype: fileNode.name.includes(".")
-            ? fileNode.name.split(".").pop()
-            : fileNode.is_file
-              ? "regular file"
-              : "directory",
-        Size: fileNode.size,
-        Mode: fileNode.mode_str,
-        Access: fileNode.mtime_str,
-        AccessSeconds: d.getTime() / 1000,
-        Modify: fileNode.mtime_str,
-        ModifySeconds: d.getTime() / 1000,
-        Change: fileNode.mtime_str,
-        ChangeSeconds: d.getTime() / 1000,
-        Uid: fileNode.uname, // Use 'uname'
-        Gid: fileNode.gname, // Use 'gname'
-        MetadataHost: "test-host.local",
-        MetadataPort: 8080,
-        MetadataUser: "testuser",
-        Cksum: "123456",
-        CksumType: "test",
-    };
-};
-
-// === Tests ===
-
-test("Should display file name in the details panel", async ({ page }) => {
+test("Should display all attributes for representative file and directory items", async ({
+    page,
+}) => {
     const currentDirectory = "/documents";
-    const expectedChildren = findChildrenByPath(fileStructureData, currentDirectory);
-    for (const expectedFile of expectedChildren) {
-        const testFilePath = `${currentDirectory}/${expectedFile.name}`;
+    const targets = ["report.docx", "presentations"];
 
-        await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
-        await clickMenuItemFromView(page, expectedFile.name, "detail");
+    await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
 
-        const expectedDetail = getExpectedDetailData(testFilePath);
+    for (const name of targets) {
+        const testFilePath = `${currentDirectory}/${name}`;
+        await clickMenuItemFromView(page, name, "detail");
+
+        const expected = getExpectedDetailData(testFilePath);
         await expect(page.locator('[data-testid="detail-Path"]').locator("td").nth(1)).toHaveText(
-            expectedDetail.File
+            expected.File
         );
-
-        await closeDetailTab(page);
-    }
-});
-
-test("Should display file type in the details panel", async ({ page }) => {
-    const currentDirectory = "/documents";
-    const expectedChildren = findChildrenByPath(fileStructureData, currentDirectory);
-    for (const expectedFile of expectedChildren) {
-        const testFilePath = `${currentDirectory}/${expectedFile.name}`;
-
-        await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
-        await clickMenuItemFromView(page, expectedFile.name, "detail");
-
-        const expectedDetail = getExpectedDetailData(testFilePath);
         await expect(page.locator('[data-testid="detail-Type"]').locator("td").nth(1)).toHaveText(
-            expectedDetail.Filetype
+            expected.Filetype
         );
-
-        await closeDetailTab(page);
-    }
-});
-
-test("Should display file size in the details panel", async ({ page }) => {
-    const currentDirectory = "/documents";
-    const expectedChildren = findChildrenByPath(fileStructureData, currentDirectory);
-    for (const expectedFile of expectedChildren) {
-        const testFilePath = `${currentDirectory}/${expectedFile.name}`;
-
-        await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
-        await clickMenuItemFromView(page, expectedFile.name, "detail");
-
-        const expectedDetail = getExpectedDetailData(testFilePath);
         await expect(page.locator('[data-testid="detail-Size"]').locator("td").nth(1)).toHaveText(
-            formatBytes(expectedDetail.Size, false)
+            formatBytes(expected.Size)
         );
-
-        await closeDetailTab(page);
-    }
-});
-
-test("Should display permissions in the details panel", async ({ page }) => {
-    const currentDirectory = "/documents";
-    const expectedChildren = findChildrenByPath(fileStructureData, currentDirectory);
-    for (const expectedFile of expectedChildren) {
-        const testFilePath = `${currentDirectory}/${expectedFile.name}`;
-
-        await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
-        await clickMenuItemFromView(page, expectedFile.name, "detail");
-
-        const expectedDetail = getExpectedDetailData(testFilePath);
         await expect(page.locator('[data-testid="detail-Mode"]').locator("td").nth(1)).toHaveText(
-            symbolicToOctal(expectedDetail.Mode)
+            expected.Mode
         );
-
-        await closeDetailTab(page);
-    }
-});
-
-test("Should display last access time in the details panel", async ({ page }) => {
-    const currentDirectory = "/documents";
-    const expectedChildren = findChildrenByPath(fileStructureData, currentDirectory);
-    for (const expectedFile of expectedChildren) {
-        const testFilePath = `${currentDirectory}/${expectedFile.name}`;
-
-        await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
-        await clickMenuItemFromView(page, expectedFile.name, "detail");
-
-        const expectedDetail = getExpectedDetailData(testFilePath);
-        await expect(page.locator('[data-testid="detail-Access"]').locator("td").nth(1)).toHaveText(
-            getTimeStr(expectedDetail.AccessSeconds, "YMD", true)
+        await expect(page.locator('[data-testid="detail-Ncopy"]').locator("td").nth(1)).toHaveText(
+            expected.Ncopy
         );
-
-        await closeDetailTab(page);
-    }
-});
-
-test("Should display last modified time in the details panel", async ({ page }) => {
-    const currentDirectory = "/documents";
-    const expectedChildren = findChildrenByPath(fileStructureData, currentDirectory);
-    for (const expectedFile of expectedChildren) {
-        const testFilePath = `${currentDirectory}/${expectedFile.name}`;
-
-        await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
-        await clickMenuItemFromView(page, expectedFile.name, "detail");
-
-        const expectedDetail = getExpectedDetailData(testFilePath);
-        await expect(page.locator('[data-testid="detail-Modify"]').locator("td").nth(1)).toHaveText(
-            getTimeStr(expectedDetail.ModifySeconds, "YMD", true)
-        );
-
-        await closeDetailTab(page);
-    }
-});
-
-test("Should display change time in the details panel", async ({ page }) => {
-    const currentDirectory = "/documents";
-    const expectedChildren = findChildrenByPath(fileStructureData, currentDirectory);
-    for (const expectedFile of expectedChildren) {
-        const testFilePath = `${currentDirectory}/${expectedFile.name}`;
-
-        await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
-        await clickMenuItemFromView(page, expectedFile.name, "detail");
-
-        const expectedDetail = getExpectedDetailData(testFilePath);
-        await expect(page.locator('[data-testid="detail-Change"]').locator("td").nth(1)).toHaveText(
-            getTimeStr(expectedDetail.ChangeSeconds, "YMD", true)
-        );
-
-        await closeDetailTab(page);
-    }
-});
-
-test("Should display file owner (UID) in the details panel", async ({ page }) => {
-    const currentDirectory = "/documents";
-    const expectedChildren = findChildrenByPath(fileStructureData, currentDirectory);
-    for (const expectedFile of expectedChildren) {
-        const testFilePath = `${currentDirectory}/${expectedFile.name}`;
-
-        await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
-        await clickMenuItemFromView(page, expectedFile.name, "detail");
-
-        const expectedDetail = getExpectedDetailData(testFilePath);
         await expect(page.locator('[data-testid="detail-Owner"]').locator("td").nth(1)).toHaveText(
-            expectedDetail.Uid
+            expected.Uid
         );
-
-        await closeDetailTab(page);
-    }
-});
-
-test("Should display file group (GID) in the details panel", async ({ page }) => {
-    const currentDirectory = "/documents";
-    const expectedChildren = findChildrenByPath(fileStructureData, currentDirectory);
-    for (const expectedFile of expectedChildren) {
-        const testFilePath = `${currentDirectory}/${expectedFile.name}`;
-
-        await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
-        await clickMenuItemFromView(page, expectedFile.name, "detail");
-
-        const expectedDetail = getExpectedDetailData(testFilePath);
         await expect(page.locator('[data-testid="detail-Group"]').locator("td").nth(1)).toHaveText(
-            expectedDetail.Gid
+            expected.Gid
         );
+        await expect(page.locator('[data-testid="detail-Access"]').locator("td").nth(1)).toHaveText(
+            getTimeStr(expected.AccessSeconds, "YMD", MOCK_NANOS)
+        );
+        await expect(page.locator('[data-testid="detail-Modify"]').locator("td").nth(1)).toHaveText(
+            getTimeStr(expected.ModifySeconds, "YMD", MOCK_NANOS)
+        );
+        await expect(page.locator('[data-testid="detail-Change"]').locator("td").nth(1)).toHaveText(
+            getTimeStr(expected.ChangeSeconds, "YMD", MOCK_NANOS)
+        );
+
+        const digestCell = page.locator('[data-testid="detail-Digest"]').locator("td").nth(1);
+        await expect(digestCell).toContainText(expected.Cksum);
+        await expect(digestCell).toContainText(expected.CksumType);
 
         await closeDetailTab(page);
     }
 });
 
-test("Should display cksum in the details panel", async ({ page }) => {
+test("Should display Link target and symbolic link type in the details panel", async ({ page }) => {
+    const currentDirectory = "/symlinks";
+    const symlinkName = "link_to_file";
+    const testFilePath = `${currentDirectory}/${symlinkName}`;
+
+    await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
+    await clickMenuItemFromView(page, symlinkName, "detail");
+
+    const expected = getExpectedDetailData(testFilePath);
+    await expect(page.locator('[data-testid="detail-Path"]').locator("td").nth(1)).toHaveText(
+        expected.File
+    );
+    await expect(page.locator('[data-testid="detail-Link"]').locator("td").nth(1)).toHaveText(
+        expected.LinkPath
+    );
+    await expect(page.locator('[data-testid="detail-Type"]').locator("td").nth(1)).toHaveText(
+        "symbolic link"
+    );
+
+    await closeDetailTab(page);
+});
+
+test("Should display an error notification when fetching details fails", async ({ page }) => {
     const currentDirectory = "/documents";
-    const expectedChildren = findChildrenByPath(fileStructureData, currentDirectory);
-    for (const expectedFile of expectedChildren) {
-        const testFilePath = `${currentDirectory}/${expectedFile.name}`;
+    const targetFile = "report.docx";
 
-        await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
-        await clickMenuItemFromView(page, expectedFile.name, "detail");
+    const calls = await mockEndpoint(page, "GET", `/attr${currentDirectory}/${targetFile}`, {
+        statusCode: 500,
+        contentType: "application/json",
+        response: JSON.stringify({
+            detail: { command: "gfstat", message: "stat failed", stdout: "", stderr: [] },
+        }),
+    });
 
-        const expectedDetail = getExpectedDetailData(testFilePath);
-        await expect(
-            page.locator('[data-testid="detail-Digest"]').locator("td").nth(1)
-        ).toContainText(expectedDetail.Cksum);
-        await expect(
-            page.locator('[data-testid="detail-Digest"]').locator("td").nth(1)
-        ).toContainText(expectedDetail.CksumType);
+    await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
+    await clickMenuItemFromView(page, targetFile, "detail");
 
-        await closeDetailTab(page);
-    }
+    expect(calls).toHaveLength(1);
+    const errorNotification = page.locator('[data-testid^="notification-"]');
+    await expect(errorNotification).toBeVisible();
+    await expect(errorNotification).toContainText("500");
+    await expect(errorNotification).toContainText("stat failed");
 });

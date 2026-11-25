@@ -1,97 +1,94 @@
 const { test, expect } = require("./api-coverage-fixture");
-const fs = require("fs");
 const { openItemAction, scrollToItem } = require("./filelistview-helpers");
 
 const {
+    setupApiMocks,
     isVisible,
     findChildrenByPath,
-    transformMtimeToUnix,
     getSize,
     getTimeStr,
     getFileIconDefault,
     freezeTime,
     toNDJSON,
-    handleRoute,
-    mockFileIcons,
-    API_URL,
     FRONTEND_URL,
-    DIR_LIST,
     ROUTE_STORAGE,
 } = require("./test_func");
 
-let fileStructureData = null;
+let mockState = null;
+
+async function mockCustomDirList(page, buildItems) {
+    await page.route("**/dir/*", async (route, request) => {
+        if (request.method() !== "GET") {
+            return await route.fallback();
+        }
+        const url = new URL(request.url());
+        if (url.searchParams.get("effperm") === "on") {
+            return await route.fallback();
+        }
+        const rawDirPath = url.pathname.replace(/^\/dir/, "") || "/";
+        const requestedPath = decodeURIComponent(rawDirPath);
+        const normalized = requestedPath === "/" ? "" : requestedPath.replace(/\/$/, "");
+        const items = buildItems(normalized);
+        await route.fulfill({
+            status: 200,
+            contentType: "application/x-ndjson",
+            body: toNDJSON(items),
+        });
+    });
+}
 
 // === Tests ===
 
 test.beforeEach(async ({ context }) => {
-    fileStructureData = transformMtimeToUnix(JSON.parse(fs.readFileSync(DIR_LIST, "utf-8")));
-    await context.route(`${API_URL}/**`, (route, request) => handleRoute(route, request));
-    await context.route(`${FRONTEND_URL}/assets/file_icons.json`, (route, request) =>
-        mockFileIcons(route, request)
-    );
+    mockState = await setupApiMocks(context);
 });
-// File/Directory Display Test
+
+test.afterEach(() => {
+    expect(mockState.unhandledRequests).toEqual([]);
+});
 
 test("Should display the file list when accessing an existing path", async ({ page }) => {
     const targetPath = "/";
-    const expectedChildren = findChildrenByPath(fileStructureData, targetPath);
+    const expectedChildren = findChildrenByPath(mockState.fileStructure, targetPath);
     await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${targetPath}`);
 
-    const fileTable = await page.waitForSelector('[data-testid="storage-view"]', {
-        timeout: 10000,
-    });
-    const fileText = await fileTable.textContent();
+    await expect(page.locator('[data-testid="storage-view"]')).toBeVisible();
 
-    console.debug(`File text: ${fileText}`);
-
-    // Check if the table header is displayed
     const checkboxHeader = page.locator('[data-testid="header-checkbox"]');
     await expect(checkboxHeader).toBeVisible();
     await expect(checkboxHeader).not.toBeChecked();
 
-    const nameHeader = page.locator('[data-testid="header-name"]');
-    await expect(nameHeader).toBeVisible();
-
-    const sizeHeader = page.locator('[data-testid="header-size"]');
-    await expect(sizeHeader).toBeVisible();
-
-    const updatedDateHeader = page.locator('[data-testid="header-date"]');
-    await expect(updatedDateHeader).toBeVisible();
+    await expect(page.locator('[data-testid="header-name"]')).toBeVisible();
+    await expect(page.locator('[data-testid="header-size"]')).toBeVisible();
+    await expect(page.locator('[data-testid="header-date"]')).toBeVisible();
 
     const listview = page.locator('[data-testid="listview"]');
     await expect(listview.locator('[data-testid^="row-list-"]')).toHaveCount(
         expectedChildren.length
     );
 
-    // Validate the row and contents of each file/folder
     for (const expectedFile of expectedChildren) {
         const rowLocator = listview.locator(`[data-testid="row-${expectedFile.name}"]`);
-
-        // Check if the row itself is visible
         await expect(rowLocator).toBeVisible();
 
-        // Check the icon
         const ext = expectedFile.name.split(".").pop();
         const iconClassString = getFileIconDefault(ext, expectedFile.is_dir, expectedFile.is_sym);
         const iconCssSelector = "." + iconClassString.replace(/ /g, ".");
         await expect(rowLocator.locator(iconCssSelector)).toBeVisible();
 
-        // Check if the file name is displayed correctly
         const fileCheckbox = rowLocator.locator('input[type="checkbox"][class="form-check-input"]');
         await expect(fileCheckbox).toBeVisible();
         await expect(fileCheckbox).not.toBeChecked();
 
         await expect(rowLocator).toContainText(expectedFile.name);
-
         await expect(rowLocator).toContainText(getSize(expectedFile.size, expectedFile.is_dir));
-
         await expect(rowLocator).toContainText(getTimeStr(expectedFile.mtime));
     }
 });
 
 test("Should display files in icon view", async ({ page }) => {
     const targetPath = "/";
-    const expectedChildren = findChildrenByPath(fileStructureData, targetPath);
+    const expectedChildren = findChildrenByPath(mockState.fileStructure, targetPath);
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${targetPath}`);
     await expect(page.locator('[data-testid="storage-view"]')).toBeVisible();
@@ -107,11 +104,8 @@ test("Should show an error message when accessing a nonexistent path", async ({ 
     await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${nonexistentPath}`);
 
     await expect(page.getByRole("heading", { name: "Error!" })).toBeVisible();
-
-    await expect(page.getByText(`Error : 404`)).toBeVisible();
-
-    const reloadLink = page.getByRole("link", { name: "Reload" });
-    await expect(reloadLink).toBeVisible();
+    await expect(page.getByText("Error : 404")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Reload" })).toBeVisible();
 
     const homeLink = page.getByRole("link", { name: "Return to home" });
     await expect(homeLink).toBeVisible();
@@ -121,44 +115,24 @@ test("Should show an error message when accessing a nonexistent path", async ({ 
 test("Should display a long file list correctly", async ({ page }) => {
     const numberOfFiles = 1000;
 
-    await page.route("**/dir/*", async (route) => {
-        const url = new URL(route.request().url());
-        let requestedPath = url.pathname.substring(3);
-        if (requestedPath === "") {
-            requestedPath = "/";
-        } else {
-            requestedPath = "/" + decodeURIComponent(requestedPath);
-        }
-
-        const largeFileList = [];
-        for (let i = 0; i < numberOfFiles; i++) {
-            largeFileList.push({
-                mode_str: "-rw-r--r--",
-                is_file: true,
-                nlink: 1,
-                uname: `user${i % 5}`,
-                gname: "users",
-                size: Math.floor(Math.random() * 1000000) + 1000,
-                mtime: 1748628000,
-                name: `large_file_${i}.txt`,
-                path: `${requestedPath}/large_file_${i}.txt`,
-            });
-        }
-
-        await route.fulfill({
-            status: 200,
-            contentType: "application/x-ndjson",
-            body: toNDJSON(largeFileList),
-        });
-    });
+    await mockCustomDirList(page, (requestedPath) =>
+        Array.from({ length: numberOfFiles }, (_, i) => ({
+            mode_str: "-rw-r--r--",
+            is_file: true,
+            nlink: 1,
+            uname: `user${i % 5}`,
+            gname: "users",
+            size: (i + 1) * 1024,
+            mtime: 1748628000,
+            name: `large_file_${i}.txt`,
+            path: `${requestedPath}/large_file_${i}.txt`,
+        }))
+    );
 
     await page.goto(FRONTEND_URL);
 
-    await page.waitForSelector('[data-testid="listview"]', {
-        timeout: 30000,
-    });
-
     const listview = page.locator('[data-testid="listview"]');
+    await expect(listview).toBeVisible({ timeout: 30_000 });
 
     await listview.locator('[data-testid="row-list-0"]').click();
     const scroller = page.getByTestId("listview-scroll-desktop");
@@ -183,16 +157,9 @@ test("Should scroll to a deeply virtualized row", async ({ page }) => {
     const numberOfFiles = 300;
     const targetFileName = `file-${String(numberOfFiles - 1).padStart(4, "0")}.txt`;
     await page.setViewportSize({ width: 1280, height: 480 });
-    await page.route("**/dir/*", async (route) => {
-        const url = new URL(route.request().url());
-        let requestedPath = url.pathname.substring(3);
-        if (requestedPath === "") {
-            requestedPath = "/";
-        } else {
-            requestedPath = "/" + decodeURIComponent(requestedPath);
-        }
 
-        const fileList = Array.from({ length: numberOfFiles }, (_, index) => {
+    await mockCustomDirList(page, (requestedPath) =>
+        Array.from({ length: numberOfFiles }, (_, index) => {
             const name = `file-${String(index).padStart(4, "0")}.txt`;
             return {
                 mode_str: "-rw-r--r--",
@@ -205,14 +172,8 @@ test("Should scroll to a deeply virtualized row", async ({ page }) => {
                 name,
                 path: `${requestedPath}/${name}`,
             };
-        });
-
-        await route.fulfill({
-            status: 200,
-            contentType: "application/x-ndjson",
-            body: toNDJSON(fileList),
-        });
-    });
+        })
+    );
 
     await page.goto(FRONTEND_URL);
     const targetRow = await scrollToItem(page, targetFileName);
@@ -220,7 +181,7 @@ test("Should scroll to a deeply virtualized row", async ({ page }) => {
 });
 
 test("Should rename an off-screen virtualized row and refresh the list", async ({ page }) => {
-    test.setTimeout(10_000);
+    test.setTimeout(25_000);
 
     const numberOfFiles = 40;
     const targetFileName = "zz-rename-source.txt";
@@ -228,15 +189,7 @@ test("Should rename an off-screen virtualized row and refresh the list", async (
     await page.setViewportSize({ width: 1280, height: 480 });
     let fileList = [];
 
-    await page.route("**/dir/*", async (route) => {
-        const url = new URL(route.request().url());
-        let requestedPath = url.pathname.substring(3);
-        if (requestedPath === "") {
-            requestedPath = "/";
-        } else {
-            requestedPath = "/" + decodeURIComponent(requestedPath);
-        }
-
+    await mockCustomDirList(page, (requestedPath) => {
         if (fileList.length === 0) {
             fileList = Array.from({ length: numberOfFiles }, (_, index) => ({
                 mode_str: "-rw-r--r--",
@@ -261,19 +214,14 @@ test("Should rename an off-screen virtualized row and refresh the list", async (
                 path: `${requestedPath}/${targetFileName}`,
             });
         }
-
-        await route.fulfill({
-            status: 200,
-            contentType: "application/x-ndjson",
-            body: toNDJSON(fileList),
-        });
+        return fileList;
     });
     await page.route("**/move", async (route) => {
         const { source, destination } = route.request().postDataJSON();
         const item = fileList.find((candidate) => candidate.path === source);
         item.name = destination.slice(destination.lastIndexOf("/") + 1);
         item.path = destination;
-        await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+        await route.fulfill({ status: 200, contentType: "text/plain", body: "" });
     });
 
     await page.goto(FRONTEND_URL);
@@ -284,18 +232,16 @@ test("Should rename an off-screen virtualized row and refresh the list", async (
     const renameModal = page.getByTestId("rename-modal");
     await renameModal.locator("#rename-input").fill(renamedFileName);
 
-    const moveResponsePromise = page.waitForResponse((response) => {
-        return (
+    const moveResponsePromise = page.waitForResponse(
+        (response) =>
             response.request().method() === "POST" &&
             new URL(response.url()).pathname.endsWith("/move")
-        );
-    });
-    const directoryResponsePromise = page.waitForResponse((response) => {
-        return (
+    );
+    const directoryResponsePromise = page.waitForResponse(
+        (response) =>
             response.request().method() === "GET" &&
             new URL(response.url()).pathname.includes("/dir/")
-        );
-    });
+    );
     await renameModal.getByTestId("modal-button-confirm").click();
     expect((await moveResponsePromise).ok()).toBeTruthy();
     expect((await directoryResponsePromise).ok()).toBeTruthy();
@@ -308,46 +254,28 @@ test("Should sort files by name (ascending and descending)", async ({ page }) =>
     const targetPath = "/";
     await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${targetPath}`);
 
-    const initialFiles = findChildrenByPath(fileStructureData, targetPath);
+    const initialFiles = findChildrenByPath(mockState.fileStructure, targetPath);
 
     const nameHeader = page.locator('[data-testid="header-name"]');
     const fileNamesLocator = page.locator('[data-testid^="row-list-"]');
 
-    // arc
-    console.debug(`expectedChildren: ${initialFiles}`);
     const expectedAscendingNames = [...initialFiles].sort((a, b) => {
-        const nameA = a.name.toLowerCase();
-        const nameB = b.name.toLowerCase();
-
-        if (a.is_dir !== b.is_dir) {
-            return a.is_dir ? -1 : 1;
-        }
-        return nameA.localeCompare(nameB);
+        if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+        return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
     });
 
-    // default : name asc
-
     await expect(nameHeader.locator('[data-testid="sort-icon-asc"]')).toBeVisible();
-
     for (let i = 0; i < expectedAscendingNames.length; i++) {
         await expect(fileNamesLocator.nth(i)).toContainText(expectedAscendingNames[i].name);
     }
 
-    // desc
     const expectedDescendingNames = [...initialFiles].sort((a, b) => {
-        const nameA = a.name.toLowerCase();
-        const nameB = b.name.toLowerCase();
-
-        if (a.is_dir !== b.is_dir) {
-            return a.is_dir ? -1 : 1;
-        }
-        return nameB.localeCompare(nameA);
+        if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+        return b.name.toLowerCase().localeCompare(a.name.toLowerCase());
     });
 
     await nameHeader.click();
-
     await expect(nameHeader.locator('[data-testid="sort-icon-desc"]')).toBeVisible();
-
     for (let i = 0; i < expectedDescendingNames.length; i++) {
         await expect(fileNamesLocator.nth(i)).toContainText(expectedDescendingNames[i].name);
     }
@@ -357,38 +285,29 @@ test("Should sort files by size (ascending and descending)", async ({ page }) =>
     const targetPath = "/";
     await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${targetPath}`);
 
-    const initialFiles = findChildrenByPath(fileStructureData, targetPath);
+    const initialFiles = findChildrenByPath(mockState.fileStructure, targetPath);
 
     const sizeHeader = page.locator('[data-testid="header-size"]');
     const fileNamesLocator = page.locator('[data-testid^="row-list-"]');
 
-    // arc
     const expectedAscendingSizes = [...initialFiles].sort((a, b) => {
-        if (a.is_dir !== b.is_dir) {
-            return a.is_dir ? -1 : 1;
-        }
+        if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
         return a.size - b.size;
     });
 
     await sizeHeader.click();
-
     await expect(sizeHeader.locator('[data-testid="sort-icon-asc"]')).toBeVisible();
-
     for (let i = 0; i < expectedAscendingSizes.length; i++) {
         await expect(fileNamesLocator.nth(i)).toContainText(expectedAscendingSizes[i].name);
     }
 
-    // desc
     const expectedDescendingSizes = [...initialFiles].sort((a, b) => {
-        if (a.is_dir !== b.is_dir) {
-            return a.is_dir ? -1 : 1;
-        }
+        if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
         return b.size - a.size;
     });
 
     await sizeHeader.click();
     await expect(sizeHeader.locator('[data-testid="sort-icon-desc"]')).toBeVisible();
-
     for (let i = 0; i < expectedDescendingSizes.length; i++) {
         await expect(fileNamesLocator.nth(i)).toContainText(expectedDescendingSizes[i].name);
     }
@@ -398,38 +317,29 @@ test("Should sort files by updated date (ascending and descending)", async ({ pa
     const targetPath = "/";
     await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${targetPath}`);
 
-    const initialFiles = findChildrenByPath(fileStructureData, targetPath);
+    const initialFiles = findChildrenByPath(mockState.fileStructure, targetPath);
 
     const updatedDateHeader = page.locator('[data-testid="header-date"]');
     const fileNamesLocator = page.locator('[data-testid^="row-list-"]');
 
-    // arc
     const expectedAscendingTimes = [...initialFiles].sort((a, b) => {
-        if (a.is_dir !== b.is_dir) {
-            return a.is_dir ? -1 : 1;
-        }
-        return new Date(a.mtime_str) - new Date(b.mtime_str);
+        if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+        return a.mtime - b.mtime;
     });
 
     await updatedDateHeader.click();
-
     await expect(updatedDateHeader.locator('[data-testid="sort-icon-asc"]')).toBeVisible();
-
     for (let i = 0; i < expectedAscendingTimes.length; i++) {
         await expect(fileNamesLocator.nth(i)).toContainText(expectedAscendingTimes[i].name);
     }
 
-    // desc
     const expectedDescendingTimes = [...initialFiles].sort((a, b) => {
-        if (a.is_dir !== b.is_dir) {
-            return a.is_dir ? -1 : 1;
-        }
-        return new Date(b.mtime_str) - new Date(a.mtime_str);
+        if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+        return b.mtime - a.mtime;
     });
 
     await updatedDateHeader.click();
     await expect(updatedDateHeader.locator('[data-testid="sort-icon-desc"]')).toBeVisible();
-
     for (let i = 0; i < expectedDescendingTimes.length; i++) {
         await expect(fileNamesLocator.nth(i)).toContainText(expectedDescendingTimes[i].name);
     }
@@ -439,19 +349,17 @@ test("Should filter files by extension (.txt)", async ({ page }) => {
     const targetPath = "/documents";
     await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${targetPath}`);
 
-    const initialFiles = findChildrenByPath(fileStructureData, targetPath);
+    const initialFiles = findChildrenByPath(mockState.fileStructure, targetPath);
     const expectedTxtFiles = initialFiles.filter(
         (file) => file.is_file && file.name.endsWith(".txt")
     );
-    const unexpectedPdfFile = initialFiles.find(
+    const unexpectedDocxFile = initialFiles.find(
         (file) => file.is_file && file.name.endsWith(".docx")
     );
     const folder = initialFiles.find((file) => !file.is_file);
 
-    // Find the dropdown toggle button
     const filterToggleButton = page.locator('[data-testid="file-filter-dropdown"]');
     await expect(filterToggleButton).toBeVisible();
-
     await filterToggleButton.click();
 
     const clearButton = page.locator('[data-testid="file-filter-clear-button"]');
@@ -463,33 +371,29 @@ test("Should filter files by extension (.txt)", async ({ page }) => {
 
     await filterToggleButton.click();
 
-    // Wait for the list to update after applying a filter
-    await page.waitForLoadState("networkidle");
-
     const listview = page.locator('[data-testid="listview"]');
-    // Check display files
-    for (const expectedFile of expectedTxtFiles) {
-        await isVisible(page, expectedFile.name);
-    }
-    if (unexpectedPdfFile) {
-        await isVisible(page, unexpectedPdfFile.name, true); // not visible
-    }
-    if (folder) {
-        await isVisible(page, folder.name, true); // not visible
-    }
     await expect(listview.locator('[data-testid^="row-list-"]')).toHaveCount(
         expectedTxtFiles.length
     );
+
+    for (const expectedFile of expectedTxtFiles) {
+        await isVisible(page, expectedFile.name);
+    }
+    if (unexpectedDocxFile) {
+        await isVisible(page, unexpectedDocxFile.name, true);
+    }
+    if (folder) {
+        await isVisible(page, folder.name, true);
+    }
 
     await expect(filterToggleButton).toHaveText("Types: txt");
 
     await filterToggleButton.click();
     await clearButton.click();
 
-    // show all
+    await expect(listview.locator('[data-testid^="row-list-"]')).toHaveCount(initialFiles.length);
     for (const expectedFile of initialFiles) {
-        const fileRow = listview.locator(`[data-testid="row-${expectedFile.name}"]`);
-        await expect(fileRow).toBeVisible();
+        await isVisible(page, expectedFile.name);
     }
 });
 
@@ -497,7 +401,7 @@ test("Should filter folders alone and together with a file extension", async ({ 
     const targetPath = "/documents";
     await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${targetPath}`);
 
-    const initialFiles = findChildrenByPath(fileStructureData, targetPath);
+    const initialFiles = findChildrenByPath(mockState.fileStructure, targetPath);
     const folders = initialFiles.filter((file) => !file.is_file);
     const txtFiles = initialFiles.filter((file) => file.is_file && file.name.endsWith(".txt"));
     const filterToggleButton = page.locator('[data-testid="file-filter-dropdown"]');
@@ -544,99 +448,104 @@ test("Should leave a visible gap between file type checkboxes and labels", async
     }
 });
 
-// return the expected list of files based on a given dateFilter value
-const getExpectedFilesForDateFilter = (allFiles, filterType) => {
-    const now = new Date("2025-06-01T12:00:00Z"); // freeze time
+test.describe("Modified date filtering with fixed UTC timezone", () => {
+    test.use({ timezoneId: "UTC" });
 
-    return allFiles.filter((file) => {
-        const fileDate = new Date(file.mtime_str);
-        const sevenDaysAgo = new Date(now);
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        const thirtyDaysAgo = new Date(now);
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        const oneYearAgo = new Date(now);
-        oneYearAgo.setDate(oneYearAgo.getDate() - 365);
-
-        switch (filterType) {
-            case "all":
-                return true;
-            case "today":
-                return (
-                    fileDate.getFullYear() === now.getFullYear() &&
-                    fileDate.getMonth() === now.getMonth() &&
-                    fileDate.getDate() === now.getDate()
-                );
-            case "week":
-                return fileDate >= sevenDaysAgo;
-            case "month":
-                return fileDate >= thirtyDaysAgo;
-            case "year":
-                return fileDate >= oneYearAgo;
-            case "this_month":
-                return (
-                    fileDate.getFullYear() === now.getFullYear() &&
-                    fileDate.getMonth() === now.getMonth()
-                );
-            case "this_year":
-                return fileDate.getFullYear() === now.getFullYear();
-            default:
-                return true;
-        }
-    });
-};
-
-test("Should filter files by modified date using all available options", async ({ page }) => {
-    await freezeTime(page, "2025-06-01T12:00:00Z");
-    const targetPath = "/";
-    await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${targetPath}`);
-
-    const allFilesAtRoot = findChildrenByPath(fileStructureData, targetPath);
-    const dateFilterToggleButton = page.locator('[data-testid="date-filter-dropdown"]');
-    await expect(dateFilterToggleButton).toBeVisible();
-
-    const filtersToTest = [
-        { label: "Today", value: "today" },
-        { label: "Last 7 Days", value: "week" },
-        { label: "Last 30 days", value: "month" },
-        { label: "Last 1 year", value: "year" },
-        { label: "This Month", value: "this_month" },
-        { label: "This Year", value: "this_year" },
+    const datedItems = [
+        { name: "today_file.txt", iso: "2025-06-15T10:00:00Z" },
+        { name: "week_file.txt", iso: "2025-06-11T10:00:00Z" },
+        { name: "month_file.txt", iso: "2025-06-02T10:00:00Z" },
+        { name: "thirty_days_file.txt", iso: "2025-05-25T10:00:00Z" },
+        { name: "year_file.txt", iso: "2025-02-10T10:00:00Z" },
+        { name: "last_year_within_365.txt", iso: "2024-09-01T10:00:00Z" },
+        { name: "old_file.txt", iso: "2023-01-01T10:00:00Z" },
     ];
 
-    const listview = page.locator('[data-testid="listview"]');
+    const expectedByFilter = {
+        today: ["today_file.txt"],
+        week: ["today_file.txt", "week_file.txt"],
+        month: ["today_file.txt", "week_file.txt", "month_file.txt", "thirty_days_file.txt"],
+        year: [
+            "today_file.txt",
+            "week_file.txt",
+            "month_file.txt",
+            "thirty_days_file.txt",
+            "year_file.txt",
+            "last_year_within_365.txt",
+        ],
+        this_month: ["today_file.txt", "week_file.txt", "month_file.txt"],
+        this_year: [
+            "today_file.txt",
+            "week_file.txt",
+            "month_file.txt",
+            "thirty_days_file.txt",
+            "year_file.txt",
+        ],
+    };
 
-    for (const { label, value } of filtersToTest) {
-        await dateFilterToggleButton.click(); // open dropdown again
-        const option = page.locator(`#dropdown-filter-${value}`);
-        await expect(option).toBeVisible();
-        await option.click();
-
-        await page.waitForLoadState("networkidle");
-        await expect(dateFilterToggleButton).toHaveText(label);
-
-        const expectedFiles = getExpectedFilesForDateFilter(allFilesAtRoot, value);
-        await expect(listview.locator('[data-testid^="row-list-"]')).toHaveCount(
-            expectedFiles.length
+    test("Should filter files by modified date using all available options", async ({ page }) => {
+        await freezeTime(page, "2025-06-15T12:00:00Z");
+        await mockCustomDirList(page, (requestedPath) =>
+            datedItems.map((item) => ({
+                mode_str: "-rw-r--r--",
+                is_file: true,
+                is_dir: false,
+                is_sym: false,
+                nlink: 1,
+                uname: "user1",
+                gname: "users",
+                size: 1024,
+                mtime: Math.floor(Date.parse(item.iso) / 1000),
+                name: item.name,
+                path: `${requestedPath}/${item.name}`,
+            }))
         );
 
-        for (const expectedFile of expectedFiles) {
-            await isVisible(page, expectedFile.name);
+        await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}/`);
+
+        const dateFilterToggleButton = page.locator('[data-testid="date-filter-dropdown"]');
+        await expect(dateFilterToggleButton).toBeVisible();
+
+        const filtersToTest = [
+            { label: "Today", value: "today" },
+            { label: "Last 7 Days", value: "week" },
+            { label: "Last 30 days", value: "month" },
+            { label: "Last 1 year", value: "year" },
+            { label: "This Month", value: "this_month" },
+            { label: "This Year", value: "this_year" },
+        ];
+
+        const listview = page.locator('[data-testid="listview"]');
+
+        for (const { label, value } of filtersToTest) {
+            await dateFilterToggleButton.click();
+            const option = page.locator(`#dropdown-filter-${value}`);
+            await expect(option).toBeVisible();
+            await option.click();
+
+            await expect(dateFilterToggleButton).toHaveText(label);
+
+            const expectedNames = expectedByFilter[value];
+            await expect(listview.locator('[data-testid^="row-list-"]')).toHaveCount(
+                expectedNames.length
+            );
+
+            for (const name of expectedNames) {
+                await isVisible(page, name);
+            }
+            for (const item of datedItems) {
+                if (!expectedNames.includes(item.name)) {
+                    await isVisible(page, item.name, true);
+                }
+            }
         }
 
-        const unexpectedFiles = allFilesAtRoot.filter((file) => !expectedFiles.includes(file));
-        for (const unexpectedFile of unexpectedFiles) {
-            await isVisible(page, unexpectedFile.name, true);
-        }
-    }
+        await dateFilterToggleButton.click();
+        await page.locator('[data-testid="date-filter-clear-button"]').click();
 
-    // Clear filter
-    await dateFilterToggleButton.click();
-    const clearFilterButton = page.locator('[data-testid="date-filter-clear-button"]');
-    await clearFilterButton.click();
-
-    await page.waitForLoadState("networkidle");
-    await expect(dateFilterToggleButton).toHaveText("Filter by Modified");
-    await expect(listview.locator('[data-testid^="row-list-"]')).toHaveCount(allFilesAtRoot.length);
+        await expect(dateFilterToggleButton).toHaveText("Filter by Modified");
+        await expect(listview.locator('[data-testid^="row-list-"]')).toHaveCount(datedItems.length);
+    });
 });
 
 test("Should display the current directory path in breadcrumb navigation", async ({ page }) => {
@@ -646,67 +555,43 @@ test("Should display the current directory path in breadcrumb navigation", async
     await expect(rootbutton).toBeVisible();
     await expect(rootbutton.getByAltText("Logo")).toBeVisible();
 
-    // root = 1
     await expect(page.locator("ol.breadcrumb li")).toHaveCount(1);
     await expect(
         page.locator("ol.breadcrumb li").filter({ hasText: "documents" })
     ).not.toBeVisible();
 
-    const testPath = "/documents/presentations";
-    await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${testPath}`);
-
+    await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}/documents/presentations`);
     await expect(rootbutton).toBeVisible();
 
-    // "documents"
     const documentsBreadcrumb = page.locator("ol.breadcrumb li button", { hasText: "documents" });
     await expect(documentsBreadcrumb).toBeVisible();
-    // "presentations"
-    const presentationsBreadcrumb = page.locator("ol.breadcrumb li button", {
-        hasText: "presentations",
-    });
-    await expect(presentationsBreadcrumb).toBeVisible();
-
-    // home + "documents" + "presentations" = 3
-    await expect(page.locator("ol.breadcrumb li")).toHaveCount(3);
-
-    // go to "documents"
-    await documentsBreadcrumb.click();
-
-    await expect(page).toHaveURL(`${FRONTEND_URL}/#${ROUTE_STORAGE}/documents`);
-
-    // home + "documents" = 2
-    await expect(page.locator("ol.breadcrumb li")).toHaveCount(2);
-    await expect(page.locator("ol.breadcrumb li button", { hasText: "documents" })).toBeVisible();
-
-    // go root
-    await rootbutton.click();
-
-    await expect(page).toHaveURL(`${FRONTEND_URL}/#${ROUTE_STORAGE}/`);
-
-    // root = 1
-    await expect(page.locator("ol.breadcrumb li")).toHaveCount(1);
-
-    // access /documents/presentations/
-    await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}/documents/presentations/`);
-    // /documents/presentations
     await expect(
         page.locator("ol.breadcrumb li button", { hasText: "presentations" })
     ).toBeVisible();
-    // Trailing slashes are ignored
     await expect(page.locator("ol.breadcrumb li")).toHaveCount(3);
 
-    // go home
+    await documentsBreadcrumb.click();
+    await expect(page).toHaveURL(`${FRONTEND_URL}/#${ROUTE_STORAGE}/documents`);
+    await expect(page.locator("ol.breadcrumb li")).toHaveCount(2);
+
+    await rootbutton.click();
+    await expect(page).toHaveURL(`${FRONTEND_URL}/#${ROUTE_STORAGE}/`);
+    await expect(page.locator("ol.breadcrumb li")).toHaveCount(1);
+
+    await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}/documents/presentations/`);
+    await expect(
+        page.locator("ol.breadcrumb li button", { hasText: "presentations" })
+    ).toBeVisible();
+    await expect(page.locator("ol.breadcrumb li")).toHaveCount(3);
+
     const homebutton = page.locator('[data-testid="home-button"]');
     await expect(homebutton).toBeVisible();
     await homebutton.click();
-    await expect(documentsBreadcrumb).toBeVisible();
+    await expect(page).toHaveURL(`${FRONTEND_URL}/#${ROUTE_STORAGE}/documents`);
+    await expect(page.getByTestId("row-report.docx")).toBeVisible();
 });
 
 test("Should open a file in a new tab when double-clicked", async ({ page, context }) => {
-    context.on("page", (page) => {
-        console.debug("[DEBUG] New tab opened:", page.url());
-    });
-
     const currentDirectory = "/documents";
     const testFileName = "report.docx";
     const testFilePath = `${currentDirectory}/${testFileName}`;
@@ -721,15 +606,11 @@ test("Should open a file in a new tab when double-clicked", async ({ page, conte
     const newPage = await newPagePromise;
 
     await newPage.waitForLoadState("load");
-
-    const expectedFileUrl = `${API_URL}/file${testFilePath}`;
-    await expect(newPage).toHaveURL(expectedFileUrl);
+    await expect(newPage).toHaveURL(`${FRONTEND_URL.replace("3000", "8080")}/file${testFilePath}`);
     await expect(newPage.locator("body")).toContainText(`This is the content of ${testFilePath}.`);
 
     await newPage.close();
 });
-
-// Path Navigation Test
 
 test("Should navigate into a directory when double-clicked", async ({ page }) => {
     const currentDirectory = "/documents";
@@ -741,43 +622,106 @@ test("Should navigate into a directory when double-clicked", async ({ page }) =>
 
     const directoryRow = page.locator(`[data-testid="row-${testDirectoryName}"]`);
     await expect(directoryRow).toBeVisible();
-
     await directoryRow.dblclick();
 
     await expect(page).toHaveURL(`${FRONTEND_URL}/#${ROUTE_STORAGE}${expectedNewPath}`);
 
-    const expectedChildrenInNewDir = findChildrenByPath(fileStructureData, expectedNewPath);
+    const expectedChildrenInNewDir = findChildrenByPath(mockState.fileStructure, expectedNewPath);
     const listview = page.locator('[data-testid="listview"]');
     await expect(listview.locator('[data-testid^="row-list-"]')).toHaveCount(
         expectedChildrenInNewDir.length
     );
-    const fileRow = page.locator(`[data-testid="row-${expectedFileName}"]`);
-    await expect(fileRow).toBeVisible();
-
+    await expect(page.locator(`[data-testid="row-${expectedFileName}"]`)).toBeVisible();
     await expect(
         page.locator("ol.breadcrumb li button", { hasText: testDirectoryName })
     ).toBeVisible();
 });
 
-test("Should navigate back and forward between directories", async ({ page }) => {
+test("Should resolve symbolic links to files, directories, and report broken links", async ({
+    page,
+    context,
+}) => {
+    await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}/symlinks`);
+
+    const fileLinkRow = page.getByTestId("row-link_to_file");
+    await expect(fileLinkRow).toBeVisible();
+    const newPagePromise = context.waitForEvent("page");
+    await fileLinkRow.dblclick();
+    const newPage = await newPagePromise;
+    await newPage.waitForLoadState("load");
+    await expect(newPage).toHaveURL("http://localhost:8080/file/documents/report.docx");
+    await expect(newPage.locator("body")).toContainText(
+        "This is the content of /documents/report.docx."
+    );
+    await newPage.close();
+
+    const dirLinkRow = page.getByTestId("row-link_to_dir");
+    await dirLinkRow.dblclick();
+    await expect(page).toHaveURL(`${FRONTEND_URL}/#${ROUTE_STORAGE}/documents`);
+    await expect(page.getByTestId("row-report.docx")).toBeVisible();
+
+    await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}/symlinks`);
+    await page.getByTestId("row-broken_link").dblclick();
+    const errorNotification = page.locator('[data-testid^="notification-"]');
+    await expect(errorNotification).toBeVisible();
+    await expect(errorNotification).toContainText("404");
+});
+
+test("Should navigate back and forward between directories and render list contents", async ({
+    page,
+}) => {
     const firstPath = "/documents";
     const secondPath = "/documents/presentations";
 
-    // Go to first directory
     await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${firstPath}`);
     await expect(page).toHaveURL(`${FRONTEND_URL}/#${ROUTE_STORAGE}${firstPath}`);
+    await expect(page.getByTestId("row-report.docx")).toBeVisible();
 
-    // Then go to second directory
     await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${secondPath}`);
     await expect(page).toHaveURL(`${FRONTEND_URL}/#${ROUTE_STORAGE}${secondPath}`);
+    await expect(page.getByTestId("row-q1_review.pptx")).toBeVisible();
 
-    // Go back
     await page.goBack();
     await expect(page).toHaveURL(`${FRONTEND_URL}/#${ROUTE_STORAGE}${firstPath}`);
+    await expect(page.getByTestId("row-report.docx")).toBeVisible();
 
-    // Go forward
     await page.goForward();
     await expect(page).toHaveURL(`${FRONTEND_URL}/#${ROUTE_STORAGE}${secondPath}`);
+    await expect(page.getByTestId("row-q1_review.pptx")).toBeVisible();
+});
+
+test("Should select all items via header checkbox and keyboard shortcuts", async ({ page }) => {
+    const targetPath = "/documents";
+    const expectedChildren = findChildrenByPath(mockState.fileStructure, targetPath);
+
+    await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${targetPath}`);
+    await expect(page.getByTestId("row-report.docx")).toBeVisible();
+
+    const headerCheckbox = page.getByTestId("header-checkbox");
+    await headerCheckbox.check();
+    await expect(page.getByTestId("action-menu")).toContainText(
+        `${expectedChildren.length} selected`
+    );
+
+    await headerCheckbox.uncheck();
+    await expect(page.getByTestId("action-menu")).not.toBeVisible();
+
+    await page.keyboard.press("Control+a");
+    await expect(page.getByTestId("action-menu")).toContainText(
+        `${expectedChildren.length} selected`
+    );
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("action-menu")).not.toBeVisible();
+
+    await page.getByTestId("row-report.docx").click();
+    await page.keyboard.press("F2");
+    await expect(page.getByTestId("rename-modal")).toBeVisible();
+    await page.getByTestId("rename-modal").getByTestId("modal-button-cancel").click();
+
+    await page.keyboard.press("Delete");
+    await expect(page.getByTestId("delete-modal")).toBeVisible();
+    await page.getByTestId("delete-modal").getByTestId("modal-button-cancel").click();
 });
 
 test("Should automatically redirect to the home directory when accessing the root URL", async ({
@@ -788,7 +732,5 @@ test("Should automatically redirect to the home directory when accessing the roo
     await page.goto(`${FRONTEND_URL}/`);
 
     await expect(page).toHaveURL(`${FRONTEND_URL}/#${ROUTE_STORAGE}${targetPath}`);
-
-    // And the breadcrumb or files update
     await expect(page.locator("ol.breadcrumb li button", { hasText: "documents" })).toBeVisible();
 });

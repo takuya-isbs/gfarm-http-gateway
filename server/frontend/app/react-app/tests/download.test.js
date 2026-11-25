@@ -1,20 +1,26 @@
 const { test, expect } = require("./api-coverage-fixture");
 const fs = require("fs");
+const AdmZip = require("adm-zip");
 
 const {
-    handleRoute,
+    setupApiMocks,
     clickMenuItemFromView,
     clickMenuItemFromMenu,
     checkItem,
-    API_URL,
     FRONTEND_URL,
     ROUTE_STORAGE,
     ZIPNAME,
 } = require("./test_func");
 
+let mockState = null;
+
 // === Tests ===
 test.beforeEach(async ({ context }) => {
-    await context.route(`${API_URL}/**`, (route, request) => handleRoute(route, request));
+    mockState = await setupApiMocks(context);
+});
+
+test.afterEach(() => {
+    expect(mockState.unhandledRequests).toEqual([]);
 });
 
 test("Should download a single file from the context menu", async ({ page }) => {
@@ -27,19 +33,17 @@ test("Should download a single file from the context menu", async ({ page }) => 
     await clickMenuItemFromView(page, testFileName, "download");
     const download = await downloadPromise;
 
-    // Verify the downloaded file name
-    expect(download.suggestedFilename().replace(/^_+|_+$/g, "")).toBe(testFileName);
+    expect(download.suggestedFilename()).toBe(testFileName);
 
-    const path = await download.path(); // Get the temporary file path
-    const fileContent = fs.readFileSync(path, "utf8"); // Read the file contents
+    const downloadPath = await download.path();
+    const fileContent = fs.readFileSync(downloadPath, "utf8");
     expect(fileContent).toContain(testFileName);
-    expect(fs.statSync(path).size).toBeGreaterThan(0);
+    expect(fs.statSync(downloadPath).size).toBeGreaterThan(0);
 });
 
 test("Should download multiple selected files as a ZIP from the actions menu", async ({ page }) => {
     const currentDirectory = "/documents";
     const filesToDownload = ["report.docx", "meeting_notes.txt"];
-    const expectedZipFileName = ZIPNAME;
 
     await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
 
@@ -51,21 +55,18 @@ test("Should download multiple selected files as a ZIP from the actions menu", a
     await clickMenuItemFromMenu(page, "download");
     const download = await downloadPromise;
 
-    expect(download.suggestedFilename()).toBe(expectedZipFileName);
+    expect(download.suggestedFilename()).toBe(ZIPNAME);
 
-    const zipFilePath = await download.path();
-    const AdmZip = require("adm-zip");
-    const zip = new AdmZip(zipFilePath);
-    const zipEntries = zip.getEntries();
+    const zip = new AdmZip(await download.path());
+    const entryNames = zip.getEntries().map((entry) => entry.entryName);
     for (const fileName of filesToDownload) {
-        expect(zipEntries.map((entry) => entry.entryName)).toContain(fileName);
+        expect(entryNames).toContain(fileName);
     }
 });
 
 test("Should download a single directory as a ZIP from the context menu", async ({ page }) => {
     const currentDirectory = "/documents";
     const testDirectoryName = "presentations";
-    const expectedZipFileName = ZIPNAME;
 
     await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
 
@@ -73,19 +74,16 @@ test("Should download a single directory as a ZIP from the context menu", async 
     await clickMenuItemFromView(page, testDirectoryName, "download");
     const download = await downloadPromise;
 
-    expect(download.suggestedFilename()).toBe(expectedZipFileName);
+    expect(download.suggestedFilename()).toBe(ZIPNAME);
 
-    const zipFilePath = await download.path();
-    const AdmZip = require("adm-zip");
-    const zip = new AdmZip(zipFilePath);
-    const zipEntries = zip.getEntries();
-    expect(zipEntries.map((entry) => entry.entryName)).toContain(testDirectoryName + "/");
+    const zip = new AdmZip(await download.path());
+    const entryNames = zip.getEntries().map((entry) => entry.entryName);
+    expect(entryNames).toContain(testDirectoryName + "/");
 });
 
 test("Should download multiple directories as a ZIP from the actions menu", async ({ page }) => {
     const rootPath = "/";
     const dirsToDownload = ["documents", "images"];
-    const expectedZipFileName = ZIPNAME;
 
     await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${rootPath}`);
 
@@ -97,14 +95,12 @@ test("Should download multiple directories as a ZIP from the actions menu", asyn
     await clickMenuItemFromMenu(page, "download");
     const download = await downloadPromise;
 
-    expect(download.suggestedFilename()).toBe(expectedZipFileName);
+    expect(download.suggestedFilename()).toBe(ZIPNAME);
 
-    const zipFilePath = await download.path();
-    const AdmZip = require("adm-zip");
-    const zip = new AdmZip(zipFilePath);
-    const zipEntries = zip.getEntries();
+    const zip = new AdmZip(await download.path());
+    const entryNames = zip.getEntries().map((entry) => entry.entryName);
     for (const dirName of dirsToDownload) {
-        expect(zipEntries.map((entry) => entry.entryName)).toContain(dirName + "/");
+        expect(entryNames).toContain(dirName + "/");
     }
 });
 
@@ -118,11 +114,10 @@ test("Should download an empty file with 0 bytes", async ({ page }) => {
     await clickMenuItemFromView(page, emptyFileName, "download");
     const download = await downloadPromise;
 
-    expect(download.suggestedFilename().replace(/^_+|_+$/g, "")).toBe(emptyFileName);
+    expect(download.suggestedFilename()).toBe(emptyFileName);
 
-    const path = await download.path();
-    const stats = fs.statSync(path);
-    expect(stats.size).toBe(0);
+    const downloadPath = await download.path();
+    expect(fs.statSync(downloadPath).size).toBe(0);
 });
 
 test("Should display an error when trying to download a nonexistent file", async ({ page }) => {

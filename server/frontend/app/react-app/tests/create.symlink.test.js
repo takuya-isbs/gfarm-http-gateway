@@ -1,129 +1,157 @@
 const { test, expect } = require("./api-coverage-fixture");
 
 const {
-    handleRoute,
-    mockRoute,
+    setupApiMocks,
+    mockEndpoint,
     clickMenuItemFromNewMenu,
     clickMenuItemFromView,
-    API_URL,
     FRONTEND_URL,
     ROUTE_STORAGE,
 } = require("./test_func");
 
-async function mockSymlinkRoute(
-    page,
-    { source, destination, statusCode = 200, mockResponse = {} }
-) {
-    await mockRoute(page, `${API_URL}/**`, "POST", "/symlink", {
-        validateBody: (body) => {
-            console.log("body.source", body.source);
-            console.log("body.destination", body.destination);
-            expect(typeof body.source).toBe("string");
-            expect(typeof body.destination).toBe("string");
-            if (source) expect(body.source).toBe(source);
-            if (destination) expect(body.destination).toBe(destination);
-        },
-        statusCode,
-        contentType: "application/json",
-        response: JSON.stringify(mockResponse),
-    });
-}
+let mockState = null;
 
 // === Tests ===
 test.beforeEach(async ({ context }) => {
-    await context.route(`${API_URL}/**`, (route, request) => handleRoute(route, request));
+    mockState = await setupApiMocks(context);
+});
+
+test.afterEach(() => {
+    expect(mockState.unhandledRequests).toEqual([]);
 });
 
 test("Should create a symbolic link to a file from the New menu", async ({ page }) => {
     const currentDirectory = "/documents";
-    const destination = "/symlink";
+    const destination = "/documents/symlink";
     const testFileName = "meeting_notes.txt";
-
-    await mockSymlinkRoute(page, {
-        source: currentDirectory + "/" + testFileName,
-        destination: destination,
-    });
+    const expectedSource = `${currentDirectory}/${testFileName}`;
 
     await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
-    await page.waitForLoadState("networkidle");
+    await expect(page.getByTestId(`row-${testFileName}`)).toBeVisible();
 
     await clickMenuItemFromNewMenu(page, "create-symlink");
 
     const newsymModal = page.locator('[data-testid="newsym-modal"]');
     await expect(newsymModal).toBeVisible();
 
-    const srcInput = newsymModal.locator('[id="symlink-target-input"]');
-    await srcInput.fill(currentDirectory + "/" + testFileName);
-
-    const destInput = newsymModal.locator('[id="symlink-linkname-input"]');
-    await destInput.fill(destination);
-
-    await page.waitForTimeout(100);
+    await newsymModal.locator('[id="symlink-target-input"]').fill(expectedSource);
+    await newsymModal.locator('[id="symlink-linkname-input"]').fill(destination);
 
     const confirmButton = newsymModal.locator('[data-testid="modal-button-confirm"]');
     await expect(confirmButton).toBeVisible();
+
+    const symlinkRequest = page.waitForRequest(
+        (req) => req.method() === "POST" && new URL(req.url()).pathname === "/symlink"
+    );
+    const symlinkResponse = page.waitForResponse(
+        (res) => res.request().method() === "POST" && new URL(res.url()).pathname === "/symlink"
+    );
     await confirmButton.click();
+    const req = await symlinkRequest;
+    expect(req.postDataJSON()).toEqual({
+        source: expectedSource,
+        destination,
+    });
+    expect((await symlinkResponse).status()).toBe(200);
+    await expect(newsymModal).not.toBeVisible();
+    await expect(page.getByTestId("row-symlink")).toBeVisible();
 });
 
 test("Should create a symbolic link to a directory from the context menu", async ({ page }) => {
     const currentDirectory = "/documents";
-    const destination = "/symlink";
+    const destination = "/documents/symlink";
     const testDirName = "documents";
-
-    await mockSymlinkRoute(page, {
-        source: currentDirectory + "/" + testDirName,
-        destination: destination,
-    });
+    const expectedSource = `${currentDirectory}/${testDirName}`;
 
     await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
-    await page.waitForLoadState("networkidle");
+    await expect(page.getByTestId(`row-${testDirName}`)).toBeVisible();
 
     await clickMenuItemFromView(page, testDirName, "symlink");
 
     const newsymModal = page.locator('[data-testid="newsym-modal"]');
     await expect(newsymModal).toBeVisible();
 
-    const destInput = newsymModal.locator('[id="symlink-linkname-input"]');
-    await destInput.fill(destination);
-
-    await page.waitForTimeout(100);
+    await newsymModal.locator('[id="symlink-linkname-input"]').fill(destination);
 
     const confirmButton = newsymModal.locator('[data-testid="modal-button-confirm"]');
     await expect(confirmButton).toBeVisible();
+
+    const symlinkRequest = page.waitForRequest(
+        (req) => req.method() === "POST" && new URL(req.url()).pathname === "/symlink"
+    );
+    const symlinkResponse = page.waitForResponse(
+        (res) => res.request().method() === "POST" && new URL(res.url()).pathname === "/symlink"
+    );
     await confirmButton.click();
+    const req = await symlinkRequest;
+    expect(req.postDataJSON()).toEqual({
+        source: expectedSource,
+        destination,
+    });
+    expect((await symlinkResponse).status()).toBe(200);
+    await expect(newsymModal).not.toBeVisible();
+    await expect(page.getByTestId("row-symlink")).toBeVisible();
 });
 
 test("Should display an error notification when symlink creation fails", async ({ page }) => {
     const currentDirectory = "/documents";
-    const destination = "/symlink";
+    const destination = "/documents/symlink";
     const testDirName = "documents";
+    const expectedSource = `${currentDirectory}/${testDirName}`;
 
-    await mockSymlinkRoute(page, {
-        source: currentDirectory + "/" + testDirName,
-        destination: destination,
+    const calls = await mockEndpoint(page, "POST", "/symlink", {
         statusCode: 500,
-        mockResponse: { detail: "error test" },
+        contentType: "application/json",
+        response: JSON.stringify({
+            detail: { command: "gfln", message: "error test", stdout: "", stderr: [] },
+        }),
     });
 
     await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
-    await page.waitForLoadState("networkidle");
+    await expect(page.getByTestId(`row-${testDirName}`)).toBeVisible();
 
     await clickMenuItemFromView(page, testDirName, "symlink");
 
     const newsymModal = page.locator('[data-testid="newsym-modal"]');
     await expect(newsymModal).toBeVisible();
 
-    const destInput = newsymModal.locator('[id="symlink-linkname-input"]');
-    await destInput.fill(destination);
-
-    await page.waitForTimeout(100);
+    await newsymModal.locator('[id="symlink-linkname-input"]').fill(destination);
 
     const confirmButton = newsymModal.locator('[data-testid="modal-button-confirm"]');
     await expect(confirmButton).toBeVisible();
+
+    const symlinkResponse = page.waitForResponse(
+        (res) => res.request().method() === "POST" && new URL(res.url()).pathname === "/symlink"
+    );
     await confirmButton.click();
+    expect((await symlinkResponse).status()).toBe(500);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].json).toEqual({
+        source: expectedSource,
+        destination,
+    });
 
     const errorNotification = page.locator('[data-testid^="notification-"]');
     await expect(errorNotification).toBeVisible();
     await expect(errorNotification).toContainText("500");
     await expect(errorNotification).toContainText("error test");
+});
+
+test("Should warn and skip API request when symlink target is missing", async ({ page }) => {
+    const calls = await mockEndpoint(page, "POST", "/symlink");
+
+    await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}/documents`);
+    await expect(page.getByTestId("storage-view")).toBeVisible();
+
+    await clickMenuItemFromNewMenu(page, "create-symlink");
+
+    const newsymModal = page.locator('[data-testid="newsym-modal"]');
+    await expect(newsymModal).toBeVisible();
+    await newsymModal.locator('[id="symlink-linkname-input"]').fill("/documents/new_sym");
+    await newsymModal.locator('[data-testid="modal-button-confirm"]').click();
+
+    const notification = page.locator('[data-testid^="notification-"]');
+    await expect(notification).toBeVisible();
+    await expect(notification).toContainText("All fields are required");
+    expect(calls).toHaveLength(0);
 });

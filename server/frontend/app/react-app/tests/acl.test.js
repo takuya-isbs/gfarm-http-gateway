@@ -2,52 +2,18 @@ const { test, expect } = require("./api-coverage-fixture");
 const fs = require("fs");
 
 const {
-    handleRoute,
-    mockRoute,
+    setupApiMocks,
+    mockEndpoint,
     clickMenuItemFromView,
-    API_URL,
     FRONTEND_URL,
     ACLIST,
     ROUTE_STORAGE,
 } = require("./test_func");
 
 let mockAclData = null;
+let mockState = null;
 
-async function mockAclUpdateRoute(
-    page,
-    { filepath, expectedAclList, statusCode = 200, mockResponse = { message: "ACL updated" } }
-) {
-    await mockRoute(page, `${API_URL}/**`, "PUT", "/acl" + filepath, {
-        validateBody: (body) => {
-            const aclList = body.acl;
-
-            for (const expected of expectedAclList) {
-                const match = aclList.find((received) => {
-                    if (
-                        received.acl_type !== expected.acl_type ||
-                        received.acl_name !== expected.acl_name ||
-                        received.is_default !== expected.is_default
-                    ) {
-                        return false;
-                    }
-
-                    return (
-                        received.acl_perms.r === expected.acl_perms.r &&
-                        received.acl_perms.w === expected.acl_perms.w &&
-                        received.acl_perms.x === expected.acl_perms.x
-                    );
-                });
-
-                expect(match).toBeDefined();
-            }
-        },
-        statusCode,
-        contentType: "application/json",
-        response: JSON.stringify(mockResponse),
-    });
-}
-
-async function assertEntry(index, entry, { acl_type, acl_name, acl_perms, is_default, is_dir }) {
+async function assertEntry(index, entry, { acl_type, acl_name, acl_perms, is_default }, isDir) {
     await expect(entry.locator(`#acinfo-${index}-acl_type`)).toHaveValue(acl_type);
     if (acl_name !== null) {
         await expect(entry.locator(`#acinfo-${index}-acl_name`)).toHaveValue(acl_name);
@@ -61,13 +27,11 @@ async function assertEntry(index, entry, { acl_type, acl_name, acl_perms, is_def
         }
     }
 
-    if (is_dir) {
+    if (isDir) {
         if (is_default) {
-            const def = entry.locator('input[id^="default-"]');
-            await expect(def).toBeChecked();
+            await expect(entry.locator('input[id^="default-"]')).toBeChecked();
         } else if (acl_name !== null) {
-            const def = entry.locator('input[id^="default-"]');
-            await expect(def).not.toBeChecked();
+            await expect(entry.locator('input[id^="default-"]')).not.toBeChecked();
         } else {
             await expect(entry.locator('input[id^="default-"]')).not.toBeVisible();
         }
@@ -80,7 +44,11 @@ async function assertEntry(index, entry, { acl_type, acl_name, acl_perms, is_def
 
 test.beforeEach(async ({ context }) => {
     mockAclData = JSON.parse(fs.readFileSync(ACLIST, "utf-8"));
-    await context.route(`${API_URL}/**`, (route, request) => handleRoute(route, request));
+    mockState = await setupApiMocks(context);
+});
+
+test.afterEach(() => {
+    expect(mockState.unhandledRequests).toEqual([]);
 });
 
 test("Should display all ACL entries for a file", async ({ page }) => {
@@ -92,37 +60,39 @@ test("Should display all ACL entries for a file", async ({ page }) => {
     await clickMenuItemFromView(page, targetFile, "acl");
 
     const acltab = page.locator('[data-testid="acl-tab"]');
+    const entries = acltab.locator("div.border.rounded.p-2.mb-2");
+    await expect(entries).toHaveCount(mockAclData.length);
 
-    let count = 0;
-    for (const data of mockAclData) {
-        console.debug("data", data);
-        const entry = acltab.locator("div.border.rounded.p-2.mb-2").nth(count);
-        await assertEntry(count, entry, data);
-        count++;
+    for (let count = 0; count < mockAclData.length; count++) {
+        await assertEntry(count, entries.nth(count), mockAclData[count], false);
     }
 });
 
-test("Should add a new ACL entry", async ({ page }) => {
+test("Should display default checkbox options for a directory ACL", async ({ page }) => {
+    await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}/`);
+
+    await clickMenuItemFromView(page, "documents", "acl");
+
+    const acltab = page.locator('[data-testid="acl-tab"]');
+    const entries = acltab.locator("div.border.rounded.p-2.mb-2");
+    await expect(entries).toHaveCount(mockAclData.length);
+
+    for (let count = 0; count < mockAclData.length; count++) {
+        await assertEntry(count, entries.nth(count), mockAclData[count], true);
+    }
+});
+
+test("Should add a new ACL entry and show user suggestions", async ({ page }) => {
     const currentDirectory = "/documents";
     const targetFile = "report.docx";
-    const newentry_type = "user";
-    const ewentry_name = "test";
-    const expectedAclList = [
-        {
-            acl_type: newentry_type,
-            acl_name: ewentry_name,
-            acl_perms: {
-                r: true,
-                w: true,
-                x: false,
-            },
-            is_default: false,
-        },
-    ];
+    const newEntryType = "user";
+    const newEntryName = "test";
+    const expectedPath = `${currentDirectory}/${targetFile}`;
 
-    await mockAclUpdateRoute(page, {
-        filepath: currentDirectory + "/" + targetFile,
-        expectedAclList: expectedAclList,
+    const calls = await mockEndpoint(page, "PUT", `/acl${expectedPath}`, {
+        statusCode: 200,
+        contentType: "text/plain",
+        response: "",
     });
 
     await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
@@ -136,51 +106,57 @@ test("Should add a new ACL entry", async ({ page }) => {
     await addEntryButton.click();
 
     const entry = acltab.locator("div.border.rounded.p-2.mb-2").last();
-
-    const typeSelect = entry.locator("select");
-    await typeSelect.selectOption(newentry_type);
+    await entry.locator("select").selectOption(newEntryType);
 
     const nameInput = entry.locator(".form-control");
-    await nameInput.fill(ewentry_name);
+    await nameInput.click();
+    await nameInput.fill("user");
+    await expect(entry.locator("ul.list-group li", { hasText: "userA" })).toBeVisible();
+    await nameInput.fill(newEntryName);
 
-    const r_box = entry.locator('input[id*="-r"]');
-    const w_box = entry.locator('input[id*="-w"]');
-
-    await r_box.check();
-    await w_box.check();
+    await entry.locator('input[id*="-r"]').check();
+    await entry.locator('input[id*="-w"]').check();
     await expect(entry.locator('input[id^="default-"]')).not.toBeVisible();
 
-    const set_button = acltab.locator('[data-testid="update-acl-button"]');
-    await expect(set_button).toBeVisible();
-    await set_button.click();
+    const setButton = acltab.locator('[data-testid="update-acl-button"]');
+    await expect(setButton).toBeVisible();
+
+    const updateResponse = page.waitForResponse(
+        (response) =>
+            response.request().method() === "PUT" &&
+            new URL(response.url()).pathname === `/acl${expectedPath}`
+    );
+    await setButton.click();
+    expect((await updateResponse).status()).toBe(200);
+
+    expect(calls).toHaveLength(1);
+    const added = calls[0].json.acl.find(
+        (item) => item.acl_type === newEntryType && item.acl_name === newEntryName
+    );
+    expect(added).toMatchObject({
+        acl_type: newEntryType,
+        acl_name: newEntryName,
+        acl_perms: { r: true, w: true, x: false },
+        is_default: false,
+    });
 });
 
 test("Should add a new default ACL entry for a directory", async ({ page }) => {
     const currentDirectory = "/";
-    const targetFile = "documents";
-    const newentry_type = "user";
-    const ewentry_name = "test";
-    const expectedAclList = [
-        {
-            acl_type: newentry_type,
-            acl_name: ewentry_name,
-            acl_perms: {
-                r: true,
-                w: true,
-                x: false,
-            },
-            is_default: true,
-        },
-    ];
+    const targetDir = "documents";
+    const newEntryType = "user";
+    const newEntryName = "test";
+    const expectedPath = `/${targetDir}`;
 
-    await mockAclUpdateRoute(page, {
-        filepath: currentDirectory + "/" + targetFile,
-        expectedAclList: expectedAclList,
+    const calls = await mockEndpoint(page, "PUT", `/acl${expectedPath}`, {
+        statusCode: 200,
+        contentType: "text/plain",
+        response: "",
     });
 
     await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
 
-    await clickMenuItemFromView(page, targetFile, "acl");
+    await clickMenuItemFromView(page, targetDir, "acl");
 
     const acltab = page.locator('[data-testid="acl-tab"]');
 
@@ -189,36 +165,54 @@ test("Should add a new default ACL entry for a directory", async ({ page }) => {
     await addEntryButton.click();
 
     const entry = acltab.locator("div.border.rounded.p-2.mb-2").last();
+    await entry.locator("select").selectOption(newEntryType);
+    await entry.locator(".form-control").fill(newEntryName);
+    await entry.locator('input[id*="-r"]').check();
+    await entry.locator('input[id*="-w"]').check();
+    await entry.locator('input[id^="default-"]').check();
 
-    const typeSelect = entry.locator("select");
-    await typeSelect.selectOption(newentry_type);
+    const setButton = acltab.locator('[data-testid="update-acl-button"]');
+    await expect(setButton).toBeVisible();
 
-    const nameInput = entry.locator(".form-control");
-    await nameInput.fill(ewentry_name);
+    const updateResponse = page.waitForResponse(
+        (response) =>
+            response.request().method() === "PUT" &&
+            new URL(response.url()).pathname === `/acl${expectedPath}`
+    );
+    await setButton.click();
+    expect((await updateResponse).status()).toBe(200);
 
-    const r_box = entry.locator('input[id*="-r"]');
-    const w_box = entry.locator('input[id*="-w"]');
-    const d_box = entry.locator('input[id^="default-"]');
-
-    await r_box.check();
-    await w_box.check();
-    await d_box.check();
-
-    const set_button = acltab.locator('[data-testid="update-acl-button"]');
-    await expect(set_button).toBeVisible();
-    await set_button.click();
+    expect(calls).toHaveLength(1);
+    const added = calls[0].json.acl.find(
+        (item) => item.acl_type === newEntryType && item.acl_name === newEntryName
+    );
+    expect(added).toMatchObject({
+        acl_type: newEntryType,
+        acl_name: newEntryName,
+        acl_perms: { r: true, w: true, x: false },
+        is_default: true,
+    });
 });
 
-test("Should remove the selected ACL entry from the list", async ({ page }) => {
+test("Should remove the selected ACL entry from the list and submit updated ACL", async ({
+    page,
+}) => {
     const currentDirectory = "/documents";
     const targetFile = "report.docx";
+    const expectedPath = `${currentDirectory}/${targetFile}`;
+    const removedName = mockAclData[3].acl_name;
+
+    const calls = await mockEndpoint(page, "PUT", `/acl${expectedPath}`, {
+        statusCode: 200,
+        contentType: "text/plain",
+        response: "",
+    });
 
     await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
 
     await clickMenuItemFromView(page, targetFile, "acl");
 
     const acltab = page.locator('[data-testid="acl-tab"]');
-
     const entry = acltab.locator("div.border.rounded.p-2.mb-2").nth(3);
 
     const deleteBtn = entry.locator(".btn-close");
@@ -226,35 +220,36 @@ test("Should remove the selected ACL entry from the list", async ({ page }) => {
     await deleteBtn.click();
 
     const entries = acltab.locator("div.border.rounded.p-2.mb-2");
+    await expect(entries).toHaveCount(mockAclData.length - 1);
 
     for (let i = 0; i < mockAclData.length - 1; i++) {
-        await expect(entries.nth(i).locator(".form-control")).not.toHaveValue(
-            mockAclData[3].acl_name
-        );
+        await expect(entries.nth(i).locator(".form-control")).not.toHaveValue(removedName);
     }
+
+    const updateResponse = page.waitForResponse(
+        (response) =>
+            response.request().method() === "PUT" &&
+            new URL(response.url()).pathname === `/acl${expectedPath}`
+    );
+    await acltab.locator('[data-testid="update-acl-button"]').click();
+    expect((await updateResponse).status()).toBe(200);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].json.acl).toHaveLength(mockAclData.length - 1);
+    expect(calls[0].json.acl.some((item) => item.acl_name === removedName)).toBe(false);
 });
 
 test("Should display error notification when ACL update fails", async ({ page }) => {
     const currentDirectory = "/documents";
     const targetFile = "report.docx";
-    const expectedAclList = [
-        {
-            acl_type: "user",
-            acl_name: null,
-            acl_perms: {
-                r: true,
-                w: true,
-                x: true,
-            },
-            is_default: false,
-        },
-    ];
+    const expectedPath = `${currentDirectory}/${targetFile}`;
 
-    await mockAclUpdateRoute(page, {
-        filepath: currentDirectory + "/" + targetFile,
-        expectedAclList: expectedAclList,
-        mockResponse: { detail: "error test" },
+    const calls = await mockEndpoint(page, "PUT", `/acl${expectedPath}`, {
         statusCode: 500,
+        contentType: "application/json",
+        response: JSON.stringify({
+            detail: { command: "gfsetfacl", message: "error test", stdout: "", stderr: [] },
+        }),
     });
 
     await page.goto(`${FRONTEND_URL}/#${ROUTE_STORAGE}${currentDirectory}`);
@@ -262,10 +257,17 @@ test("Should display error notification when ACL update fails", async ({ page })
     await clickMenuItemFromView(page, targetFile, "acl");
 
     const acltab = page.locator('[data-testid="acl-tab"]');
+    const setButton = acltab.locator('[data-testid="update-acl-button"]');
+    await expect(setButton).toBeVisible();
 
-    const set_button = acltab.locator('[data-testid="update-acl-button"]');
-    await expect(set_button).toBeVisible();
-    await set_button.click();
+    const updateResponse = page.waitForResponse(
+        (response) =>
+            response.request().method() === "PUT" &&
+            new URL(response.url()).pathname === `/acl${expectedPath}`
+    );
+    await setButton.click();
+    expect((await updateResponse).status()).toBe(500);
+    expect(calls).toHaveLength(1);
 
     const errorNotification = page.locator('[data-testid^="notification-"]');
     await expect(errorNotification).toBeVisible();
