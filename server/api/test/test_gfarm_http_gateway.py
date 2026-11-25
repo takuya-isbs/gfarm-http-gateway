@@ -1,20 +1,19 @@
-import base64
-
 import asyncio
-from fastapi.testclient import TestClient
-import pytest
-import pytest_asyncio
-from unittest.mock import patch, Mock, MagicMock, AsyncMock
-
-import zipfile
+import base64
 import io
-import time
 import json
 import os
+import time
+import zipfile
 from types import SimpleNamespace
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import gfarm_http_gateway
-
+import pytest
+import pytest_asyncio
+from fastapi import HTTPException
+from fastapi.testclient import TestClient
 
 client = TestClient(gfarm_http_gateway.app)
 
@@ -28,10 +27,10 @@ userpass_b64_bin = base64.b64encode(userpass_str.encode())
 userpass_b64_str = userpass_b64_bin.decode()
 req_headers_basic_auth = {"Authorization": "Basic " + userpass_b64_str}
 
-req_headers_anon_auth = {}
+req_headers_anon_auth: dict[str, str] = {}
 
 
-def test_openapi_documents_streaming_response_content_types():
+def test_openapi_documents_streaming_response_content_types() -> None:
     openapi = client.get("/openapi.json").json()
 
     dir_operation = openapi["paths"]["/dir/{gfarm_path}"]["get"]
@@ -48,7 +47,7 @@ def test_openapi_documents_streaming_response_content_types():
     [(True, True), (False, False), ("yes", True), ("on", True),
      ("0", False), ("no", False)],
 )
-def test_str2bool(value, expected):
+def test_str2bool(value: Any, expected: Any) -> None:
     assert gfarm_http_gateway.str2bool(value) is expected
 
 
@@ -56,7 +55,7 @@ def test_str2bool(value, expected):
     "value, expected",
     [("a,b", ["a", "b"]), ("", [""])],
 )
-def test_str2list(value, expected):
+def test_str2list(value: Any, expected: Any) -> None:
     assert gfarm_http_gateway.str2list(value) == expected
 
 
@@ -65,17 +64,18 @@ def test_str2list(value, expected):
     [(None, None), ("", None), ("none", None), ("value", "value"),
      (123, None)],
 )
-def test_str2none(value, expected):
+def test_str2none(value: Any, expected: Any) -> None:
     assert gfarm_http_gateway.str2none(value) == expected
 
 
-def test_raise_gfarm_http_error_maps_exception_status():
-    with pytest.raises(gfarm_http_gateway.HTTPException) as caught:
+def test_raise_gfarm_http_error_maps_exception_status() -> None:
+    with pytest.raises(HTTPException) as caught:
         gfarm_http_gateway.raise_gfarm_http_error(
             "gfls", PermissionError("permission denied"), "stdout", ["stderr"])
 
     assert caught.value.status_code == 403
-    assert caught.value.detail == {
+    detail: Any = caught.value.detail
+    assert detail == {
         "command": "gfls",
         "message": "permission denied",
         "stdout": "stdout",
@@ -83,7 +83,7 @@ def test_raise_gfarm_http_error_maps_exception_status():
     }
 
 
-def test_load_config_from_file_filters_and_unquotes(tmp_path):
+def test_load_config_from_file_filters_and_unquotes(tmp_path: Any) -> None:
     config_file = tmp_path / "gateway.conf"
     config_file.write_text(
         'GFARM_HTTP_DEBUG="yes" # enable debug\n'
@@ -100,7 +100,7 @@ def test_load_config_from_file_filters_and_unquotes(tmp_path):
     }
 
 
-def test_load_config_from_env_filters_keys(monkeypatch):
+def test_load_config_from_env_filters_keys(monkeypatch: Any) -> None:
     monkeypatch.setattr(
         os,
         "environ",
@@ -119,7 +119,9 @@ def test_load_config_from_env_filters_keys(monkeypatch):
     }
 
 
-def test_manage_tempfiles_creates_private_directories(tmp_path, monkeypatch):
+def test_manage_tempfiles_creates_private_directories(
+    tmp_path: Any, monkeypatch: Any
+) -> None:
     tmpdir = tmp_path / "gateway-tmp"
     monkeypatch.setattr(gfarm_http_gateway, "TMPDIR", str(tmpdir))
     monkeypatch.setattr(
@@ -142,7 +144,7 @@ def test_manage_tempfiles_creates_private_directories(tmp_path, monkeypatch):
     ],
 )
 def test_check_tempdir_mode_rejects_insecure_directory(
-        monkeypatch, st_uid, st_mode, message):
+        monkeypatch: Any, st_uid: Any, st_mode: Any, message: Any) -> None:
     monkeypatch.setattr(gfarm_http_gateway, "TMPDIR", "/tmp/test-gateway")
     monkeypatch.setattr(os.path, "exists", lambda path: True)
     monkeypatch.setattr(
@@ -166,14 +168,14 @@ def test_check_tempdir_mode_rejects_insecure_directory(
         ("unexpected error", RuntimeError),
     ],
 )
-def test_classify_gfarm_error(error, exception):
+def test_classify_gfarm_error(error: Any, exception: Any) -> None:
     result = gfarm_http_gateway.classify_gfarm_error([error])
 
     assert isinstance(result, exception)
 
 
 @pytest.mark.asyncio
-async def test_login_oidc_username_is_used_by_set_env(monkeypatch):
+async def test_login_oidc_username_is_used_by_set_env(monkeypatch: Any) -> None:
     request = Mock()
     request.client.host = "127.0.0.1"
     request.session = {}
@@ -218,7 +220,7 @@ async def test_login_oidc_username_is_used_by_set_env(monkeypatch):
 
 
 @pytest.fixture
-def mock_claims():
+def mock_claims() -> Any:
     with patch("jose.jwt.get_unverified_claims") as mock:
         mock.return_value = {
             "sub": user_claim,
@@ -227,46 +229,45 @@ def mock_claims():
 
 
 @pytest.fixture
-def mock_anon():
-    with patch("gfarm_http_gateway.ALLOW_ANONYMOUS") as mock:
-        mock = "yes"
+def mock_anon() -> Any:
+    with patch("gfarm_http_gateway.ALLOW_ANONYMOUS", "yes") as mock:
         yield mock
 
 
 @pytest.fixture
-def mock_access_token():
+def mock_access_token() -> Any:
     with patch("gfarm_http_gateway.get_access_token") as mock:
         mock.return_value = test_access_token
         yield mock
 
 
 @pytest.fixture
-def mock_access_token_none():
+def mock_access_token_none() -> Any:
     with patch("gfarm_http_gateway.get_access_token") as mock:
         mock.return_value = None
         yield mock
 
 
 @pytest.fixture
-def mock_user_passwd():
+def mock_user_passwd() -> Any:
     with patch("gfarm_http_gateway.get_user_passwd") as mock:
         mock.return_value = tuple(userpass_str.split(":", 1))
         yield mock
 
 
 @pytest.fixture
-def mock_get_file_info():
+def mock_get_file_info() -> Any:
     with patch("gfarm_http_gateway.get_file_info") as mock:
         existing = True
         is_file = True
         size = 1
-        mtime = 1717232400.0
+        mtime = 1717232400
         mock.return_value = gfarm_http_gateway.FileInfo(
             exists=existing, is_file=is_file, size=size, mtime=mtime)
         yield mock
 
 
-def mock_exec_common(mock, stdout, stderr, result):
+def mock_exec_common(mock: Any, stdout: Any, stderr: Any, result: Any) -> Any:
     # Dummy asyncio.subprocess.Process
     mock_proc = Mock()
     mock_proc.stdin = Mock(spec=asyncio.StreamWriter)
@@ -279,7 +280,7 @@ def mock_exec_common(mock, stdout, stderr, result):
     if stderr is not None:
         mock_proc.stderr.feed_data(stderr)
     mock_proc.stderr.feed_eof()
-    mock_future_wait = asyncio.Future()
+    mock_future_wait: asyncio.Future[Any] = asyncio.Future()
     mock_proc.wait.return_value = mock_future_wait
     mock_future_wait.set_result(result)
     mock.return_value = mock_proc
@@ -288,7 +289,7 @@ def mock_exec_common(mock, stdout, stderr, result):
 
 # See: https://docs.pytest.org/en/latest/example/parametrize.html#apply-indirect-on-particular-arguments  # noqa: E501
 @pytest_asyncio.fixture(scope="function")
-async def mock_exec(request):
+async def mock_exec(request: Any) -> Any:
     # expected parameters
     stdout, stderr, result = request.param
     with patch('asyncio.create_subprocess_exec') as mock:
@@ -296,28 +297,28 @@ async def mock_exec(request):
 
 
 @pytest_asyncio.fixture(scope="function")
-async def mock_gfstat(request):
+async def mock_gfstat(request: Any) -> Any:
     stdout, stderr, result = request.param
     with patch('gfarm_http_gateway.gfstat') as mock:
         yield mock_exec_common(mock, stdout, stderr, result)
 
 
 @pytest_asyncio.fixture(scope="function")
-async def mock_gfmv(request):
+async def mock_gfmv(request: Any) -> Any:
     stdout, stderr, result = request.param
     with patch('gfarm_http_gateway.gfmv') as mock:
         yield mock_exec_common(mock, stdout, stderr, result)
 
 
 @pytest_asyncio.fixture(scope="function")
-async def mock_gfrm(request):
+async def mock_gfrm(request: Any) -> Any:
     stdout, stderr, result = request.param
     with patch('gfarm_http_gateway.gfrm') as mock:
         yield mock_exec_common(mock, stdout, stderr, result)
 
 
 @pytest_asyncio.fixture(scope="function")
-async def mock_get_file_info_not_file(request):
+async def mock_get_file_info_not_file(request: Any) -> Any:
     with patch("gfarm_http_gateway.get_file_info") as mock:
         existing = True
         is_file = False
@@ -328,7 +329,7 @@ async def mock_get_file_info_not_file(request):
 
 
 @pytest_asyncio.fixture(scope="function")
-async def mock_get_file_info_not_found(request):
+async def mock_get_file_info_not_found(request: Any) -> Any:
     with patch("gfarm_http_gateway.get_file_info") as mock:
         err = FileNotFoundError("no such file or directory")
         mock.side_effect = err
@@ -336,17 +337,17 @@ async def mock_get_file_info_not_found(request):
 
 
 @pytest_asyncio.fixture(scope="function")
-async def mock_gfls(request):
+async def mock_gfls(request: Any) -> Any:
     stdout, stderr, result = request.param
     with patch('gfarm_http_gateway.gfls') as mock:
         yield mock_exec_common(mock, stdout, stderr, result)
 
 
 @pytest_asyncio.fixture(scope="function")
-async def mock_gfexport(request):
+async def mock_gfexport(request: Any) -> Any:
     stderr, result = request.param
     with patch('gfarm_http_gateway.gfexport') as mock:
-        def _gfexport_dynamic_side_effect(env_arg, filepath_arg):
+        def _gfexport_dynamic_side_effect(env_arg: Any, filepath_arg: Any) -> Any:
             mock_proc = MagicMock()
 
             # stdout: simulate read() and readline()
@@ -375,23 +376,23 @@ async def mock_gfexport(request):
 
 
 @pytest_asyncio.fixture(scope="function")
-async def mock_gfwhoami(request):
+async def mock_gfwhoami(request: Any) -> Any:
     stdout, stderr, result = request.param
     with patch('gfarm_http_gateway.gfwhoami') as mock:
         yield mock_exec_common(mock, stdout, stderr, result)
 
 
-def make_mock_proc(mock, stdout: bytes, stderr: bytes, returncode: int):
+def make_mock_proc(mock: Any, stdout: bytes, stderr: bytes, returncode: int) -> Any:
     mock_proc = Mock()
     mock_proc.returncode = returncode
 
     # Simulate .communicate()
-    async def communicate(input=None):
+    async def communicate(input: Any=None) -> Any:
         return stdout, stderr
     mock_proc.communicate = AsyncMock(side_effect=communicate)
 
     # Simulate .wait()
-    wait_future = asyncio.Future()
+    wait_future: asyncio.Future[Any] = asyncio.Future()
     wait_future.set_result(returncode)
     mock_proc.wait.return_value = wait_future
 
@@ -400,7 +401,7 @@ def make_mock_proc(mock, stdout: bytes, stderr: bytes, returncode: int):
 
 
 @pytest_asyncio.fixture(scope="function")
-async def mock_setfacl(request):
+async def mock_setfacl(request: Any) -> Any:
     stdout, stderr, returncode = request.param
     with patch("asyncio.create_subprocess_exec") as mock:
         make_mock_proc(mock, stdout, stderr, returncode)
@@ -408,7 +409,7 @@ async def mock_setfacl(request):
 
 
 @pytest_asyncio.fixture(scope="function")
-async def mock_gfptar(request):
+async def mock_gfptar(request: Any) -> Any:
     stdout, stderr, result = request.param
 
     mock_proc = MagicMock()
@@ -438,7 +439,7 @@ async def mock_gfptar(request):
         yield mock_proc
 
 
-def assert_is_oidc_auth(kwargs):
+def assert_is_oidc_auth(kwargs: Any) -> None:
     env = kwargs.get("env")
     mech = env.get("GFARM_SASL_MECHANISMS")
     assert mech == "XOAUTH2"
@@ -446,7 +447,7 @@ def assert_is_oidc_auth(kwargs):
     assert user == user_claim
 
 
-def assert_is_basic_auth(kwargs):
+def assert_is_basic_auth(kwargs: Any) -> None:
     env = kwargs.get("env")
     mech = env.get("GFARM_SASL_MECHANISMS")
     assert mech == "PLAIN"
@@ -456,13 +457,15 @@ def assert_is_basic_auth(kwargs):
     assert passwd == "PASSWO:RD123"
 
 
-def assert_is_anon_auth(kwargs):
+def assert_is_anon_auth(kwargs: Any) -> None:
     env = kwargs.get("env")
     mech = env.get("GFARM_SASL_MECHANISMS")
     assert mech == "ANONYMOUS"
 
 
-def assert_gfarm_http_error(response, code, command, expect_msg_list, stdout):
+def assert_gfarm_http_error(
+    response: Any, code: Any, command: Any, expect_msg_list: Any, stdout: Any
+) -> None:
     assert response.status_code == code
     j = response.json()
     detail = j.get("detail")
@@ -529,7 +532,7 @@ parsed_stat = {
 }
 
 
-def parse_gfstat():
+def parse_gfstat() -> None:
     st = gfarm_http_gateway.parse_gfstat(gfstat_dir_stdout).model_dump()
     print(st)
     assert st == parsed_stat
@@ -543,7 +546,7 @@ expect_gfwhoami_error = (None, b"error", 1)
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_gfwhoami], indirect=True)
-async def test_whoami_oidc_auth(mock_claims, mock_exec):
+async def test_whoami_oidc_auth(mock_claims: Any, mock_exec: Any) -> None:
     response = client.get("/conf/me", headers=req_headers_oidc_auth)
     assert response.status_code == 200
     args, kwargs = mock_exec.call_args
@@ -554,7 +557,7 @@ async def test_whoami_oidc_auth(mock_claims, mock_exec):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_gfwhoami], indirect=True)
-async def test_whoami_basic_auth(mock_claims, mock_exec):
+async def test_whoami_basic_auth(mock_claims: Any, mock_exec: Any) -> None:
     response = client.get("/conf/me", headers=req_headers_basic_auth)
     assert response.status_code == 200
     args, kwargs = mock_exec.call_args
@@ -565,7 +568,9 @@ async def test_whoami_basic_auth(mock_claims, mock_exec):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_gfwhoami], indirect=True)
-async def test_whoami_anon_auth_enabled(mock_anon, mock_claims, mock_exec):
+async def test_whoami_anon_auth_enabled(
+    mock_anon: Any, mock_claims: Any, mock_exec: Any
+) -> None:
     # GFARM_HTTP_ALLOW_ANONYMOUS=yes
     response = client.get("/conf/me", headers=req_headers_anon_auth)
     assert response.status_code == 200
@@ -577,7 +582,7 @@ async def test_whoami_anon_auth_enabled(mock_anon, mock_claims, mock_exec):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_gfwhoami], indirect=True)
-async def test_whoami_anon_auth_disabled(mock_claims, mock_exec):
+async def test_whoami_anon_auth_disabled(mock_claims: Any, mock_exec: Any) -> None:
     # GFARM_HTTP_ALLOW_ANONYMOUS=no (default)
     response = client.get("/conf/me", headers=req_headers_anon_auth)
     assert response.status_code == 401
@@ -585,7 +590,9 @@ async def test_whoami_anon_auth_disabled(mock_claims, mock_exec):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_gfwhoami], indirect=True)
-async def test_whoami_oidc_session(mock_claims, mock_access_token, mock_exec):
+async def test_whoami_oidc_session(
+    mock_claims: Any, mock_access_token: Any, mock_exec: Any
+) -> None:
     response = client.get("/conf/me")
     assert response.status_code == 200
     args, kwargs = mock_exec.call_args
@@ -596,8 +603,8 @@ async def test_whoami_oidc_session(mock_claims, mock_access_token, mock_exec):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_gfwhoami], indirect=True)
-async def test_whoami_basic_session(mock_claims, mock_access_token_none,
-                                    mock_user_passwd, mock_exec):
+async def test_whoami_basic_session(mock_claims: Any, mock_access_token_none: Any,
+                                    mock_user_passwd: Any, mock_exec: Any) -> None:
     response = client.get("/conf/me")
     assert response.status_code == 200
     args, kwargs = mock_exec.call_args
@@ -606,7 +613,7 @@ async def test_whoami_basic_session(mock_claims, mock_access_token_none,
     assert response.text == expect_gfwhoami_stdout
 
 
-def test_debug_page_api_actions(monkeypatch):
+def test_debug_page_api_actions(monkeypatch: Any) -> None:
     monkeypatch.setattr(
         gfarm_http_gateway,
         "login_check",
@@ -676,7 +683,9 @@ expect_gfls = ((expect_gfls_stdout).encode(), b"error", 0)
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_gfls], indirect=True)
-async def test_dir_list(mock_claims, mock_get_file_info_not_file, mock_exec):
+async def test_dir_list(
+    mock_claims: Any, mock_get_file_info_not_file: Any, mock_exec: Any
+) -> None:
     response = client.get("/dir/testdir?long_format=0&output_format=plain",
                           headers=req_headers_oidc_auth)
     assert response.status_code == 200
@@ -689,7 +698,9 @@ async def test_dir_list(mock_claims, mock_get_file_info_not_file, mock_exec):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_gfls], indirect=True)
-async def test_dir_list_a(mock_claims, mock_get_file_info_not_file, mock_exec):
+async def test_dir_list_a(
+    mock_claims: Any, mock_get_file_info_not_file: Any, mock_exec: Any
+) -> None:
     response = client.get("/dir/testdir?show_hidden=1"
                           "&long_format=0&output_format=plain",
                           headers=req_headers_oidc_auth)
@@ -703,7 +714,9 @@ async def test_dir_list_a(mock_claims, mock_get_file_info_not_file, mock_exec):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_gfls], indirect=True)
-async def test_dir_list_l(mock_claims, mock_get_file_info_not_file, mock_exec):
+async def test_dir_list_l(
+    mock_claims: Any, mock_get_file_info_not_file: Any, mock_exec: Any
+) -> None:
     response = client.get("/dir/testdir?long_format=1&output_format=plain",
                           headers=req_headers_oidc_auth)
     assert response.status_code == 200
@@ -715,7 +728,9 @@ async def test_dir_list_l(mock_claims, mock_get_file_info_not_file, mock_exec):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_gfls], indirect=True)
-async def test_dir_list_R(mock_claims, mock_get_file_info_not_file, mock_exec):
+async def test_dir_list_R(
+    mock_claims: Any, mock_get_file_info_not_file: Any, mock_exec: Any
+) -> None:
     response = client.get("/dir/testdir?recursive=1"
                           "&long_format=0&output_format=plain",
                           headers=req_headers_oidc_auth)
@@ -727,7 +742,9 @@ async def test_dir_list_R(mock_claims, mock_get_file_info_not_file, mock_exec):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_gfls], indirect=True)
-async def test_dir_list_e(mock_claims, mock_get_file_info_not_file, mock_exec):
+async def test_dir_list_e(
+    mock_claims: Any, mock_get_file_info_not_file: Any, mock_exec: Any
+) -> None:
     response = client.get("/dir/testdir?effperm=1"
                           "&long_format=0&output_format=plain",
                           headers=req_headers_oidc_auth)
@@ -764,8 +781,8 @@ expect_gfls_json_stdout = {
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [gfls_success_param], indirect=True)
-async def test_dir_list_json(mock_claims, mock_get_file_info_not_file,
-                             mock_exec):
+async def test_dir_list_json(mock_claims: Any, mock_get_file_info_not_file: Any,
+                             mock_exec: Any) -> None:
     response = client.get("/dir/testdir",
                           headers=req_headers_oidc_auth)
     assert response.status_code == 200
@@ -782,8 +799,8 @@ expect_gfls_err = ((expect_gfls_err_msg + "\n").encode(), b"error", 1)
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_gfls_err], indirect=True)
-async def test_dir_list_err(mock_claims, mock_get_file_info_not_file,
-                            mock_exec):
+async def test_dir_list_err(mock_claims: Any, mock_get_file_info_not_file: Any,
+                            mock_exec: Any) -> None:
     response = client.get("/dir/testdir?long_format=0&output_format=plain",
                           headers=req_headers_oidc_auth)
     # assert_gfarm_http_error(response, 500, "gfls", None, expect_gfls_err_msg)
@@ -796,8 +813,8 @@ async def test_dir_list_err(mock_claims, mock_get_file_info_not_file,
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_gfls_err], indirect=True)
-async def test_dir_list_ign_err(mock_claims, mock_get_file_info_not_file,
-                                mock_exec):
+async def test_dir_list_ign_err(mock_claims: Any, mock_get_file_info_not_file: Any,
+                                mock_exec: Any) -> None:
     response = client.get("/dir/testdir?ign_err=1"
                           "&long_format=0&output_format=plain",
                           headers=req_headers_oidc_auth)
@@ -814,7 +831,7 @@ expect_no_stdout = (no_stdout.encode(), b"", 0)
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_no_stdout], indirect=True)
-async def test_dir_create(mock_claims, mock_exec):
+async def test_dir_create(mock_claims: Any, mock_exec: Any) -> None:
     response = client.put("/dir/a/testdir", headers=req_headers_oidc_auth)
     assert response.status_code == 200
     args, kwargs = mock_exec.call_args
@@ -824,7 +841,7 @@ async def test_dir_create(mock_claims, mock_exec):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_no_stdout], indirect=True)
-async def test_dir_remove(mock_claims, mock_exec):
+async def test_dir_remove(mock_claims: Any, mock_exec: Any) -> None:
     response = client.delete("/dir/testdir", headers=req_headers_oidc_auth)
     assert response.status_code == 200
     args, kwargs = mock_exec.call_args
@@ -847,8 +864,10 @@ expect_gfstat = (gfstat_file_stdout.encode(), b"", 0)
 )
 @pytest.mark.parametrize("mock_gfstat", [expect_gfstat], indirect=True)
 @pytest.mark.parametrize("mock_exec", [expect_gfexport], indirect=True)
-async def test_file_export(mock_claims, mock_gfstat, mock_exec, path,
-                           expected_content_type):
+async def test_file_export(
+    mock_claims: Any, mock_gfstat: Any, mock_exec: Any, path: Any,
+    expected_content_type: Any,
+) -> None:
     response = client.get(path,
                           headers=req_headers_oidc_auth)
     assert response.status_code == 200
@@ -861,7 +880,7 @@ async def test_file_export(mock_claims, mock_gfstat, mock_exec, path,
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_gfmv", [expect_no_stdout], indirect=True)
 @pytest.mark.parametrize("mock_exec", [expect_no_stdout], indirect=True)
-async def test_file_import(mock_claims, mock_gfmv, mock_exec):
+async def test_file_import(mock_claims: Any, mock_gfmv: Any, mock_exec: Any) -> None:
     input_data = b"test data"
     response = client.put("/file/a/testfile.txt",
                           content=input_data,
@@ -881,7 +900,7 @@ async def test_file_import(mock_claims, mock_gfmv, mock_exec):
 expect_gfreg_err = (b"", b"error", 1)
 
 
-def repeat_str(text, length):
+def repeat_str(text: Any, length: Any) -> Any:
     repeated_string = ""
     while len(repeated_string) < length:
         repeated_string += text
@@ -891,7 +910,9 @@ def repeat_str(text, length):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_gfrm", [expect_no_stdout], indirect=True)
 @pytest.mark.parametrize("mock_exec", [expect_gfreg_err], indirect=True)
-async def test_file_import_err(mock_claims, mock_gfrm, mock_exec):
+async def test_file_import_err(
+    mock_claims: Any, mock_gfrm: Any, mock_exec: Any
+) -> None:
     MAXNAMELEN = 255
     MAXVIEWNAMELEN = 128
     fname = "/dir/" + repeat_str("abcde", MAXNAMELEN)
@@ -918,7 +939,7 @@ async def test_file_import_err(mock_claims, mock_gfrm, mock_exec):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_no_stdout], indirect=True)
-async def test_file_remove(mock_claims, mock_exec):
+async def test_file_remove(mock_claims: Any, mock_exec: Any) -> None:
     response = client.delete("/file/test.pptx", headers=req_headers_oidc_auth)
     assert response.status_code == 200
     args, kwargs = mock_exec.call_args
@@ -928,7 +949,7 @@ async def test_file_remove(mock_claims, mock_exec):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_no_stdout], indirect=True)
-async def test_file_remove_with_args(mock_claims, mock_exec):
+async def test_file_remove_with_args(mock_claims: Any, mock_exec: Any) -> None:
     response = client.delete("/file/test.pptx?force=on&recursive=on",
                              headers=req_headers_oidc_auth)
     assert response.status_code == 200
@@ -939,7 +960,7 @@ async def test_file_remove_with_args(mock_claims, mock_exec):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_no_stdout], indirect=True)
-async def test_move_rename(mock_claims, mock_exec):
+async def test_move_rename(mock_claims: Any, mock_exec: Any) -> None:
     src = "/dir1/file1.txt"
     dest = "/dir2/file2.txt"
     move = {
@@ -960,7 +981,7 @@ expect_gfstat = (gfstat_dir_stdout.encode(), b"", 0)
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [(expect_gfstat)], indirect=True)
-async def test_get_attr(mock_claims, mock_exec):
+async def test_get_attr(mock_claims: Any, mock_exec: Any) -> None:
     response = client.get("/attr/dir/testfile.txt",
                           headers=req_headers_oidc_auth)
     assert response.status_code == 200
@@ -971,7 +992,7 @@ async def test_get_attr(mock_claims, mock_exec):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_no_stdout], indirect=True)
-async def test_change_attr(mock_claims, mock_exec):
+async def test_change_attr(mock_claims: Any, mock_exec: Any) -> None:
     mode = "1750"
     update_stat = {
         "Mode": mode,
@@ -992,8 +1013,9 @@ expect_gfuser = (expect_gfuser_stdout.encode(), b"error", 0)
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_gfwhoami", [expect_gfwhoami], indirect=True)
 @pytest.mark.parametrize("mock_exec", [expect_gfuser], indirect=True)
-async def test_user_info_with_access_token(mock_claims, mock_exec,
-                                           mock_gfwhoami, mock_access_token):
+async def test_user_info_with_access_token(
+    mock_claims: Any, mock_exec: Any, mock_gfwhoami: Any, mock_access_token: Any
+) -> None:
     response = client.get("/user_info",
                           headers=req_headers_oidc_auth)
     assert response.status_code == 200
@@ -1004,8 +1026,9 @@ async def test_user_info_with_access_token(mock_claims, mock_exec,
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_gfwhoami", [expect_gfwhoami], indirect=True)
 @pytest.mark.parametrize("mock_exec", [expect_gfuser], indirect=True)
-async def test_user_info_with_password(mock_claims, mock_exec,
-                                       mock_gfwhoami, mock_user_passwd):
+async def test_user_info_with_password(
+    mock_claims: Any, mock_exec: Any, mock_gfwhoami: Any, mock_user_passwd: Any
+) -> None:
     response = client.get("/user_info",
                           headers=req_headers_oidc_auth)
     assert response.status_code == 200
@@ -1016,7 +1039,7 @@ async def test_user_info_with_password(mock_claims, mock_exec,
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_gfwhoami",
                          [expect_gfwhoami_error], indirect=True)
-async def test_user_info_None(mock_claims, mock_gfwhoami):
+async def test_user_info_None(mock_claims: Any, mock_gfwhoami: Any) -> None:
     response = client.get("/user_info",
                           headers=req_headers_oidc_auth)
     assert response.status_code == 401
@@ -1040,7 +1063,7 @@ expect_gfls_stdout_data1 = (
 gfls_success_param1 = (expect_gfls_stdout_data1, b"", 0)
 
 
-async def zip_export_check(paths, expect_names, expect_contents):
+async def zip_export_check(paths: Any, expect_names: Any, expect_contents: Any) -> None:
     test_files = {"paths": paths}
 
     response = client.post("/zip",
@@ -1079,10 +1102,10 @@ async def zip_export_check(paths, expect_names, expect_contents):
 @pytest.mark.parametrize("mock_gfexport", [(b"", 0)], indirect=True)
 # @pytest.mark.parametrize("mock_exec", [expect_gfexport], indirect=True)
 async def test_zip_export_file_and_directory(
-        mock_claims,
-        mock_get_file_info_not_file,
-        mock_gfls,
-        mock_gfexport):
+        mock_claims: Any,
+        mock_get_file_info_not_file: Any,
+        mock_gfls: Any,
+        mock_gfexport: Any) -> None:
     expected_zip_paths = [
         "testdir/file_a.txt",
         "testdir/file_b.txt",
@@ -1122,10 +1145,10 @@ gfls_success_param2 = (expect_gfls_stdout_data2, b"", 0)
                          [gfls_success_param2], indirect=True)
 @pytest.mark.parametrize("mock_gfexport", [(b"", 0)], indirect=True)
 async def test_zip_export_nest_directory(
-        mock_claims,
-        mock_get_file_info_not_file,
-        mock_gfls,
-        mock_gfexport):
+        mock_claims: Any,
+        mock_get_file_info_not_file: Any,
+        mock_gfls: Any,
+        mock_gfexport: Any) -> None:
     expected_zip_paths = [
         "testdir/test/",
         "testdir/test/test2/",
@@ -1151,10 +1174,10 @@ gfls_success_param3 = (expect_gfls_stdout_data3, b"", 0)
                          [gfls_success_param3], indirect=True)
 @pytest.mark.parametrize("mock_gfexport", [(b"", 0)], indirect=True)
 async def test_zip_export_file(
-        mock_claims,
-        mock_get_file_info,
-        mock_gfls,
-        mock_gfexport):
+        mock_claims: Any,
+        mock_get_file_info: Any,
+        mock_gfls: Any,
+        mock_gfexport: Any) -> None:
     expected_zip_paths = [
         "testfile1.txt",
     ]
@@ -1173,10 +1196,10 @@ async def test_zip_export_file(
                          [gfls_success_param], indirect=True)
 @pytest.mark.parametrize("mock_gfexport", [(b"", 0)], indirect=True)
 async def test_zip_export_file_not_found(
-        mock_claims,
-        mock_get_file_info_not_found,
-        mock_gfls,
-        mock_gfexport):
+        mock_claims: Any,
+        mock_get_file_info_not_found: Any,
+        mock_gfls: Any,
+        mock_gfexport: Any) -> None:
     test_files = {"paths": ["testdir"]}
 
     response = client.post("/zip",
@@ -1197,10 +1220,10 @@ gfls_error_param = (expect_gfls_stdout_data4, b"", 1)
                          [gfls_error_param], indirect=True)
 @pytest.mark.parametrize("mock_gfexport", [(b"", 0)], indirect=True)
 async def test_zip_export_gfls_error(
-        mock_claims,
-        mock_get_file_info,
-        mock_gfls,
-        mock_gfexport):
+        mock_claims: Any,
+        mock_get_file_info: Any,
+        mock_gfls: Any,
+        mock_gfexport: Any) -> None:
     test_files = {"paths": ["/tmp/testdir/testfile1.txt"]}
     expected_filename = "testfile1.txt"
     response = client.post("/zip",
@@ -1229,10 +1252,10 @@ async def test_zip_export_gfls_error(
                          [gfls_success_param3], indirect=True)
 @pytest.mark.parametrize("mock_exec", [(b"", b"error", 1)], indirect=True)
 async def test_zip_export_gfexport_error(
-        mock_claims,
-        mock_get_file_info,
-        mock_gfls,
-        mock_exec):
+        mock_claims: Any,
+        mock_get_file_info: Any,
+        mock_gfls: Any,
+        mock_exec: Any) -> None:
     test_files = {"paths": ["/tmp/testdir/testfile1.txt"]}
     expected_filename = "testfile1.txt"
     expected_content = "/tmp/testdir/testfile1.txt"
@@ -1297,7 +1320,7 @@ parsed_acl = {
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [(expect_gfgetfacl)], indirect=True)
-async def test_get_acl(mock_claims, mock_exec):
+async def test_get_acl(mock_claims: Any, mock_exec: Any) -> None:
     response = client.get("/acl/dir/testfile.txt",
                           headers=req_headers_oidc_auth)
     assert response.status_code == 200
@@ -1308,7 +1331,7 @@ async def test_get_acl(mock_claims, mock_exec):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_setfacl", [expect_no_stdout], indirect=True)
-async def test_set_acl(mock_claims, mock_setfacl):
+async def test_set_acl(mock_claims: Any, mock_setfacl: Any) -> None:
     response = client.put("/acl/dir/testfile.txt",
                           json=parsed_acl,
                           headers=req_headers_oidc_auth)
@@ -1320,7 +1343,7 @@ async def test_set_acl(mock_claims, mock_setfacl):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_gfuser], indirect=True)
-async def test_get_users(mock_claims, mock_exec):
+async def test_get_users(mock_claims: Any, mock_exec: Any) -> None:
     response = client.get("/users",
                           headers=req_headers_oidc_auth)
     assert response.status_code == 200
@@ -1339,7 +1362,7 @@ parsed_userlist = [{
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_gfuser], indirect=True)
-async def test_get_users_with_long_format(mock_claims, mock_exec):
+async def test_get_users_with_long_format(mock_claims: Any, mock_exec: Any) -> None:
     response = client.get("/users?long_format=on",
                           headers=req_headers_oidc_auth)
     assert response.status_code == 200
@@ -1355,7 +1378,7 @@ parsed_grouplist = [{'group': 'testgroup', 'menbers': 'testuser'}]
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_gfgroup], indirect=True)
-async def test_get_groups(mock_claims, mock_exec):
+async def test_get_groups(mock_claims: Any, mock_exec: Any) -> None:
     response = client.get("/groups",
                           headers=req_headers_oidc_auth)
     assert response.status_code == 200
@@ -1366,7 +1389,7 @@ async def test_get_groups(mock_claims, mock_exec):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_gfgroup], indirect=True)
-async def test_get_group_with_long_format(mock_claims, mock_exec):
+async def test_get_group_with_long_format(mock_claims: Any, mock_exec: Any) -> None:
     response = client.get("/groups?long_format=on",
                           headers=req_headers_oidc_auth)
     assert response.status_code == 200
@@ -1377,7 +1400,7 @@ async def test_get_group_with_long_format(mock_claims, mock_exec):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mock_exec", [expect_no_stdout], indirect=True)
-async def test_create_symlink(mock_claims, mock_exec):
+async def test_create_symlink(mock_claims: Any, mock_exec: Any) -> None:
     src = "/dir1/file1.txt"
     dest = "/dir2/file2.txt"
     move = {
@@ -1403,7 +1426,7 @@ gfls_success_param_own = (expect_gfls_stdout_owndata, b"", 0)
 @pytest.mark.parametrize("mock_exec", [(expect_gfstat)], indirect=True)
 @pytest.mark.parametrize("mock_gfls",
                          [gfls_success_param_own], indirect=True)
-async def test_get_symlink(mock_claims, mock_exec, mock_gfls):
+async def test_get_symlink(mock_claims: Any, mock_exec: Any, mock_gfls: Any) -> None:
     response = client.get("/symlink/testdir/testfile1.txt",
                           headers=req_headers_oidc_auth)
     assert response.status_code == 200
@@ -1417,12 +1440,12 @@ async def test_get_symlink(mock_claims, mock_exec, mock_gfls):
 @pytest.mark.parametrize("mock_exec", [expect_no_stdout], indirect=True)
 @pytest.mark.parametrize("mock_gfmv", [expect_no_stdout], indirect=True)
 async def test_file_copy(
-    mock_claims,
-    mock_get_file_info,
-    mock_gfmv,
-    mock_exec,
-    mock_gfexport
-):
+    mock_claims: Any,
+    mock_get_file_info: Any,
+    mock_gfmv: Any,
+    mock_exec: Any,
+    mock_gfexport: Any
+) -> None:
     copy_data = {
         "source": "/dir1/file1.txt",
         "destination": "/dir2/file2.txt",
@@ -1443,11 +1466,11 @@ async def test_file_copy(
                          indirect=True)
 @pytest.mark.parametrize("mock_exec", [expect_no_stdout], indirect=True)
 async def test_gfptar_create(
-    mock_claims,
-    mock_get_file_info_not_found,
-    mock_exec,
-    mock_gfptar
-):
+    mock_claims: Any,
+    mock_get_file_info_not_found: Any,
+    mock_exec: Any,
+    mock_gfptar: Any
+) -> None:
     tar_data = {
         "command": "create",
         "basedir": "/source/dir",
@@ -1470,11 +1493,11 @@ async def test_gfptar_create(
                          indirect=True)
 @pytest.mark.parametrize("mock_exec", [expect_no_stdout], indirect=True)
 async def test_gfptar_update(
-    mock_claims,
-    mock_get_file_info,
-    mock_exec,
-    mock_gfptar
-):
+    mock_claims: Any,
+    mock_get_file_info: Any,
+    mock_exec: Any,
+    mock_gfptar: Any
+) -> None:
     tar_data = {
         "command": "update",
         "basedir": "/source/dir",
@@ -1497,11 +1520,11 @@ async def test_gfptar_update(
                          indirect=True)
 @pytest.mark.parametrize("mock_exec", [expect_no_stdout], indirect=True)
 async def test_gfptar_append(
-    mock_claims,
-    mock_get_file_info,
-    mock_exec,
-    mock_gfptar
-):
+    mock_claims: Any,
+    mock_get_file_info: Any,
+    mock_exec: Any,
+    mock_gfptar: Any
+) -> None:
     tar_data = {
         "command": "append",
         "basedir": "/source/dir",
@@ -1524,11 +1547,11 @@ async def test_gfptar_append(
                          indirect=True)
 @pytest.mark.parametrize("mock_exec", [expect_no_stdout], indirect=True)
 async def test_gfptar_error(
-    mock_claims,
-    mock_get_file_info,
-    mock_exec,
-    mock_gfptar
-):
+    mock_claims: Any,
+    mock_get_file_info: Any,
+    mock_exec: Any,
+    mock_gfptar: Any
+) -> None:
     tar_data = {
         "command": "append",
         "basedir": "/source/dir",
@@ -1566,7 +1589,7 @@ async def test_gfptar_error(
 #         if self.stderr is not None:
 #             mock_proc.stderr.feed_data(self.stderr)
 #         mock_proc.stderr.feed_eof()
-#         mock_future_wait = asyncio.Future()
+#         mock_future_wait: asyncio.Future[Any] = asyncio.Future()
 #         mock_proc.wait.return_value = mock_future_wait
 #         mock_future_wait.set_result(0)
 #         mock.return_value = mock_proc

@@ -1,76 +1,66 @@
 import asyncio
 import base64
 import bz2
-from datetime import datetime
+import contextlib
 import gzip
 import inspect
 import json
 import logging
-from logging.handlers import SysLogHandler
-import socket
 import mimetypes
 import os
-from pprint import pformat as pf
+import posixpath
 import random
-import string
-import time
-import types
+import re
 import secrets
 import shlex
+import socket
+import stat
+import string
 import subprocess
 import sys
-from typing import (
-    List,
-    Union,
-    Optional,
-    AsyncGenerator,
-    Literal,
-    Dict,
-    Callable)
-import urllib
-import re
 import tempfile
+import threading
+import time
+import types
+import urllib
+import uuid
 import zipfile
 from collections import deque
-import threading
-import stat
-import uuid
-import posixpath
+from collections.abc import AsyncGenerator, Callable
 from concurrent.futures import ThreadPoolExecutor
-import contextlib
-
-from loguru import logger
+from contextlib import asynccontextmanager
+from datetime import datetime
+from logging.handlers import SysLogHandler
+from pprint import pformat as pf
+from typing import Any, Literal, NoReturn
 
 import httpx
 import requests
-
-from pydantic import BaseModel
-
 from authlib.integrations.starlette_client import OAuth
-from fastapi import (FastAPI, Query, Header, HTTPException, Request,
-                     Form, status)
+from cryptography.fernet import Fernet
+from fastapi import FastAPI, Form, Header, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import (PlainTextResponse,
-                               StreamingResponse,
-                               Response,
-                               HTMLResponse,
-                               RedirectResponse,
-                               JSONResponse,
-                               FileResponse)
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from contextlib import asynccontextmanager
-from starlette.middleware.sessions import SessionMiddleware
-
-from cryptography.fernet import Fernet
-
-from redis_client import RedisClient
 
 # https://github.com/mpdavis/python-jose/blob/master/jose/jwt.py
 from jose import jwt
+from loguru import logger
+from pydantic import BaseModel
+from redis_client import RedisClient
+from starlette.middleware.sessions import SessionMiddleware
 
 
-def exit_error():
+def exit_error() -> None:
     logger.error("Exit (error)")
     sys.exit(1)
 
@@ -83,17 +73,17 @@ STORAGE_URL_PREFIX = "#/ui"
 CONFIG_KEY_PREFIX = "GFARM_HTTP_"
 
 
-def str2bool(s):
+def str2bool(s: Any) -> Any:
     if isinstance(s, bool):
         return s
     return s.lower() in ("1", "yes", "true", "on", "enable")
 
 
-def str2list(s):
+def str2list(s: Any) -> Any:
     return s.split(",")
 
 
-def str2none(s):
+def str2none(s: Any) -> Any:
     if not s:  # "" or None or False or not 0
         return None
     if not isinstance(s, str):
@@ -103,10 +93,10 @@ def str2none(s):
     return s
 
 
-def load_config_from_file(fpath):
+def load_config_from_file(fpath: Any) -> Any:
     data = {}
     prefix = CONFIG_KEY_PREFIX
-    with open(fpath, 'r') as f:
+    with open(fpath) as f:
         for line in f:
             line = line.strip()
             if line and "=" in line:
@@ -124,7 +114,7 @@ def load_config_from_file(fpath):
     return data
 
 
-def load_config_from_env():
+def load_config_from_env() -> Any:
     config = {}
     prefix = CONFIG_KEY_PREFIX
     for key, value in os.environ.items():
@@ -133,7 +123,7 @@ def load_config_from_env():
     return config
 
 
-def validate_conf(data, required_keys):
+def validate_conf(data: Any, required_keys: Any) -> None:
     last_err = None
     for key in required_keys:
         if key not in data:
@@ -144,7 +134,7 @@ def validate_conf(data, required_keys):
         # raise ValueError(last_err)
 
 
-def format_conf(data, required_keys):
+def format_conf(data: Any, required_keys: Any) -> None:
     for key in required_keys:
         val = data[key]
         newval = val.format(**data)
@@ -300,8 +290,8 @@ if TOKEN_STORE.lower() == "database":
         REDIS_PASSWORD = None
 else:
     REDIS_HOST = None
-    REDIS_PORT = None
-    REDIS_DB = None
+    REDIS_PORT = None  # type: ignore[assignment]
+    REDIS_DB = None  # type: ignore[assignment]
     REDIS_SSL = False
     REDIS_SSL_CERTFILE = None
     REDIS_SSL_KEYFILE = None
@@ -352,7 +342,7 @@ except Exception:
     LOCAL_LOGFILE_COMPRESSION = None
 
 
-def parse_syslog_address(val):
+def parse_syslog_address(val: Any) -> Any:
     if not val:
         return None
     val = val.strip()
@@ -397,7 +387,7 @@ except Exception:
 GFARM_PREFIX = "gfarm"
 
 
-def conf_check_not_recommended():
+def conf_check_not_recommended() -> None:
     if not SESSION_ENCRYPT:
         logger.warning("NOT RECOMMENDED: GFARM_HTTP_SESSION_ENCRYPT=no")
     if not VERIFY_CERT:
@@ -407,10 +397,11 @@ def conf_check_not_recommended():
         #   to host 'HOSTNAME'. Adding certificate verification is strongly
         #   advised.
         #   See: https://urllib3.readthedocs.io/en/latest/advanced-usage.html#tls-warnings  # noqa: E501
-        requests.packages.urllib3.disable_warnings()
+        import urllib3
+        urllib3.disable_warnings()
 
 
-def conf_check_invalid():
+def conf_check_invalid() -> None:
     error = False
     if OIDC_REDIRECT_URI_PAGE != "index" \
        and OIDC_REDIRECT_URI_PAGE != "auth":
@@ -429,7 +420,7 @@ def conf_check_invalid():
 class InterceptHandler(logging.Handler):
     # See: https://loguru.readthedocs.io/en/stable/overview.html#entirely-compatible-with-standard-logging  # noqa: E501
 
-    def emit(self, record):
+    def emit(self, record: Any) -> None:
         # Get corresponding Loguru level if it exists.
         try:
             level = logger.level(record.levelname).name
@@ -437,7 +428,8 @@ class InterceptHandler(logging.Handler):
             level = record.levelno
 
         # Find caller from where originated the logged message.
-        frame, depth = logging.currentframe(), 0
+        frame: Any = logging.currentframe()
+        depth = 0
         while frame and (depth == 0
                          or frame.f_code.co_filename == logging.__file__):
             frame = frame.f_back
@@ -522,7 +514,7 @@ if SYSLOG:
     syslog_handler = SysLogHandler(
         address=SYSLOG, facility=SYSLOG_FACILITY, socktype=SYSLOG_SOCK_TYPE)
 
-    def syslog_sink(m):
+    def syslog_sink(m: Any) -> None:
         r = m.record
         rec = logging.LogRecord(
             name=r["name"],
@@ -539,7 +531,7 @@ if SYSLOG:
     loguru_handlers.append({"sink": syslog_sink, "level": loglevel})
 
 
-logger.configure(handlers=loguru_handlers)
+logger.configure(handlers=loguru_handlers)  # type: ignore[arg-type]
 
 
 # Examples
@@ -548,7 +540,7 @@ logger.configure(handlers=loguru_handlers)
 #   logger.bind(payload=dict(request.query_params)).debug("params")  # noqa: E501
 
 
-def log_operation(env, method, apiname, opname, args):
+def log_operation(env: Any, method: Any, apiname: Any, opname: Any, args: Any) -> None:
     user = get_user_from_env(env)
     ipaddr = get_client_ip_from_env(env)
     logger.opt(depth=1).info(
@@ -556,13 +548,13 @@ def log_operation(env, method, apiname, opname, args):
         f"args={str(args)}")
 
 
-def log_login(request, user, login_type):
+def log_login(request: Any, user: Any, login_type: Any) -> None:
     ipaddr = request.client.host
     logger.opt(depth=1).info(
         f"{ipaddr}:0 user={user}, login_auth_type={login_type}")
 
 
-def log_login_error(request, user, login_type, error):
+def log_login_error(request: Any, user: Any, login_type: Any, error: Any) -> None:
     ipaddr = request.client.host
     logger.opt(depth=1).error(
         f"{ipaddr}:0 user={user}, login_auth_type={login_type}, error={error}")
@@ -576,7 +568,7 @@ conf_check_invalid()  # may exit
 
 
 #############################################################################
-def check_tempdir_mode():
+def check_tempdir_mode() -> None:
     if os.path.exists(TMPDIR):
         st = os.stat(TMPDIR)
         mode = stat.S_IMODE(st.st_mode)
@@ -595,7 +587,7 @@ def check_tempdir_mode():
             )
 
 
-def manage_tempfiles():
+def manage_tempfiles() -> None:
     if os.path.exists(TMPDIR):
         check_tempdir_mode()
     else:
@@ -612,7 +604,7 @@ manage_tempfiles()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> Any:
     # Load
     if TOKEN_STORE.lower() == "database":
         app.state.redis = RedisClient(host=REDIS_HOST,
@@ -645,6 +637,7 @@ api_dir = os.path.dirname(api_path)
 top_dir = os.path.dirname(api_dir)
 bin_dir = f"{top_dir}/bin"
 
+fer: Fernet | None
 if SESSION_ENCRYPT:
     # fer = Fernet(Fernet.generate_key())
     fer = Fernet(SESSION_SECRET)
@@ -654,7 +647,7 @@ else:
 templates = Jinja2Templates(directory="templates")
 
 
-def template_response(request, name, context):
+def template_response(request: Any, name: Any, context: Any) -> Any:
     """Create a template response on old and new Starlette versions."""
     parameters = inspect.signature(templates.TemplateResponse).parameters
     if "request" in parameters:
@@ -704,7 +697,7 @@ provider = oauth.my_oidc_provider
 metadata = None  # cached forever
 
 
-async def oidc_metadata():
+async def oidc_metadata() -> Any:
     global metadata
     if metadata is None:
         # cache
@@ -714,7 +707,7 @@ async def oidc_metadata():
     return metadata
 
 
-async def oidc_keys_url():
+async def oidc_keys_url() -> Any:
     if OIDC_KEYS_URL:
         return OIDC_KEYS_URL
     try:
@@ -729,7 +722,7 @@ async def oidc_keys_url():
     return jwks_uri
 
 
-async def oidc_logout_url():
+async def oidc_logout_url() -> Any:
     if OIDC_LOGOUT_URL:
         return OIDC_LOGOUT_URL
     try:
@@ -744,19 +737,19 @@ async def oidc_logout_url():
     return logout_url
 
 
-def compress_str_gzip(input_str):
+def compress_str_gzip(input_str: Any) -> Any:
     return gzip.compress(input_str.encode())
 
 
-def decompress_str_gzip(input_bin):
+def decompress_str_gzip(input_bin: Any) -> Any:
     return gzip.decompress(input_bin).decode()
 
 
-def compress_str_bz2(input_str):
+def compress_str_bz2(input_str: Any) -> Any:
     return bz2.compress(input_str.encode())
 
 
-def decompress_str_bz2(input_bin):
+def decompress_str_bz2(input_bin: Any) -> Any:
     return bz2.decompress(input_bin).decode()
 
 
@@ -768,7 +761,7 @@ else:
     decompress_str = decompress_str_gzip
 
 
-def encrypt_json(data):
+def encrypt_json(data: Any) -> Any:
     if fer:
         # dict -> JSON str
         s = json.dumps(data)
@@ -785,7 +778,7 @@ def encrypt_json(data):
         return data
 
 
-def decrypt_json(data):
+def decrypt_json(data: Any) -> Any:
     if fer:
         try:
             # base85 str -> encrypted bin
@@ -803,7 +796,7 @@ def decrypt_json(data):
         return data
 
 
-async def encrypt_token(token, request):
+async def encrypt_token(token: Any, request: Any) -> Any:
     if TOKEN_STORE.lower() == "database":
         session_ref = request.session.get("token")
         if session_ref:
@@ -822,7 +815,7 @@ async def encrypt_token(token, request):
         session_ref["access_token"] = token.get("access_token")
 
         token_id = session_ref.get("token_id")
-        f_session = Fernet(session_ref.get("key").encode())
+        f_session = Fernet(str(session_ref.get("key") or "").encode())
 
         s = token.get("refresh_token")
         cb = compress_str(s)
@@ -837,7 +830,7 @@ async def encrypt_token(token, request):
     return encrypt_json(set_data)
 
 
-async def decrypt_token(request, encrypted_token):
+async def decrypt_token(request: Any, encrypted_token: Any) -> Any:
     try:
         return decrypt_json(encrypted_token)
     except Exception as e:
@@ -846,7 +839,7 @@ async def decrypt_token(request, encrypted_token):
         return None
 
 
-async def set_token(request: Request, token):
+async def set_token(request: Request, token: Any) -> None:
     necessary_token = {}
     necessary_token["access_token"] = token.get("access_token")
     necessary_token["refresh_token"] = token.get("refresh_token")
@@ -858,14 +851,15 @@ USE_HTTPX = True
 TRANSIENT_STATUS = {408, 429, 500, 502, 503, 504}
 
 
-async def http_request(method, url, data=None,
-                       attempts: int = HTTP_MAX_ATTEMPTS):
+async def http_request(method: Any, url: Any, data: Any=None,
+                       attempts: int = HTTP_MAX_ATTEMPTS) -> Any:
     if not url:
         raise RuntimeError("empty url")
     last_exc = None
     attempts = max(1, attempts)
     for attempt in range(1, attempts + 1):
         try:
+            response: httpx.Response | requests.Response
             if USE_HTTPX:
                 async with httpx.AsyncClient(verify=VERIFY_CERT) as client:
                     response = await client.request(method, url, data=data)
@@ -887,19 +881,19 @@ async def http_request(method, url, data=None,
     raise RuntimeError("http_request exhausted retries without response")
 
 
-async def http_post(url, data, ):
+async def http_post(url: Any, data: Any, ) -> Any:
     if not url:
         raise RuntimeError("empty url")
     return await http_request("POST", url, data)
 
 
-async def http_get(url):
+async def http_get(url: Any) -> Any:
     if not url:
         raise RuntimeError("empty url")
     return await http_request("GET", url)
 
 
-async def acquire_lock_db(token_id: str):
+async def acquire_lock_db(token_id: str) -> Any:
     if not token_id:
         raise RuntimeError("Redis lock failed: token_id is empty")
     store = app.state.redis
@@ -913,14 +907,14 @@ async def acquire_lock_db(token_id: str):
                        f"(token_id={token_id})")
 
 
-async def release_lock_db(token_id: str, val: str):
+async def release_lock_db(token_id: str, val: str) -> None:
     store = app.state.redis
     res = await store.release_lock(token_id, val)
     if not res:
         logger.exception(f"release_lock_db failed to remove {token_id}")
 
 
-async def get_rt_from_db(session_ref):
+async def get_rt_from_db(session_ref: Any) -> Any:
     token_id = session_ref.get("token_id")
     if token_id is None:
         return None
@@ -937,7 +931,7 @@ async def get_rt_from_db(session_ref):
     return decompress_str(cb)
 
 
-async def use_refresh_token(request: Request, token):
+async def use_refresh_token(request: Request, token: Any) -> Any:
     logger.debug("use_refresh_token is called")
     using_db = TOKEN_STORE.lower() == "database"
     token_id = None
@@ -985,7 +979,7 @@ async def use_refresh_token(request: Request, token):
                 logger.exception("failed to release refresh_token lock")
 
 
-def jwt_error(msg):
+def jwt_error(msg: Any) -> Any:
     return HTTPException(status_code=500, detail=f"JWT error: {msg}")
 
 
@@ -995,7 +989,7 @@ jwks_cache_timeout = 600  # sec.
 
 
 # caching jwks
-async def oidc_jwks():
+async def oidc_jwks() -> Any:
     global jwks_cache
     global jwks_cache_time
     now = int(time.time())
@@ -1014,7 +1008,7 @@ async def oidc_jwks():
         return jwks_cache
 
 
-async def verify_token(access_token, use_raise=False):
+async def verify_token(access_token: Any, use_raise: Any=False) -> Any:
     try:
         jwks = await oidc_jwks()
         # if DEBUG:
@@ -1045,7 +1039,7 @@ async def verify_token(access_token, use_raise=False):
         return None
 
 
-async def is_expired_token(token, use_raise=False):
+async def is_expired_token(token: Any, use_raise: Any=False) -> Any:
     if TOKEN_VERIFY:
         access_token = token.get("access_token")
         claims = await verify_token(access_token, use_raise)
@@ -1072,7 +1066,7 @@ async def is_expired_token(token, use_raise=False):
         return True  # expired
 
 
-async def get_token(request: Request):
+async def get_token(request: Request) -> Any:
     token = request.session.get("token")
     if not token:
         return None
@@ -1090,40 +1084,41 @@ async def get_token(request: Request):
     return None  # not login
 
 
-def delete_token(request: Request):
+def delete_token(request: Request) -> None:
     request.session.pop("token", None)
 
 
-async def get_access_token(request: Request) -> Optional[str]:
+async def get_access_token(request: Request) -> str | None:
     token = await get_token(request)
     if token:
         # print("token from session: " + str(token))  # for debug
-        return token.get("access_token")
+        access_token = token.get("access_token")
+        return str(access_token) if access_token is not None else None
     return None
 
 
-def parse_access_token(access_token):
+def parse_access_token(access_token: Any) -> Any:
     claims = jwt.get_unverified_claims(access_token)
     header = jwt.get_unverified_header(access_token)
     return pf(header) + "\n" + pf(claims)
 
 
-def get_user_from_access_token(access_token):
+def get_user_from_access_token(access_token: Any) -> Any:
     claims = jwt.get_unverified_claims(access_token)
     return claims.get(TOKEN_USER_CLAIM, None)
 
 
-def get_csrf(request: Request):
+def get_csrf(request: Request) -> Any:
     return request.session.get("csrf")
 
 
-def gen_csrf(request: Request):
+def gen_csrf(request: Request) -> Any:
     csrf_token = secrets.token_urlsafe(32)
     request.session["csrf"] = csrf_token
     return csrf_token
 
 
-async def oidc_auth_common(request):
+async def oidc_auth_common(request: Any) -> Any:
     try:
         token = await provider.authorize_access_token(request)
         delete_user_passwd(request)
@@ -1139,7 +1134,7 @@ async def oidc_auth_common(request):
 
 
 async def login_check(request: Request,
-                      error: str = ""):
+                      error: str = "") -> Any:
     login_ok = False
     sasl_username = ""
     try:
@@ -1163,8 +1158,8 @@ async def login_check(request: Request,
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request,
                 error: str = "",
-                session_state: str = None,
-                code: str = None):
+                session_state: str | None = None,
+                code: str | None = None) -> Any:
     if session_state is not None and code is not None:
         return await oidc_auth_common(request)
 
@@ -1176,8 +1171,8 @@ async def index(request: Request,
 @app.get("/debug", response_class=HTMLResponse)
 async def debug_page(request: Request,
                      error: str = "",
-                     session_state: str = None,
-                     code: str = None):
+                     session_state: str | None = None,
+                     code: str | None = None) -> Any:
     login_ok, access_token, sasl_username, error = await login_check(request)
 
     if error != "":
@@ -1215,7 +1210,7 @@ async def debug_page(request: Request,
 
 @app.get("/user_info")
 async def user_info(request: Request,
-                    authorization: Union[str, None] = Header(default=None)):
+                    authorization: str | None = Header(default=None)) -> Any:
     try:
         access_token = await get_access_token(request)
     except Exception as e:
@@ -1262,7 +1257,7 @@ async def user_info(request: Request,
 
 @app.get("/login")
 async def login_page(request: Request,
-                     redirect: Union[str, None] = None):
+                     redirect: str | None = None) -> Any:
     csrf_token = gen_csrf(request)
     error = request.session.get("error", "")
     request.session.pop("error", None)
@@ -1274,7 +1269,7 @@ async def login_page(request: Request,
 
 @app.get("/login_oidc")
 async def login_oidc(request: Request,
-                     username: Optional[str] = Query(None)):
+                     username: str | None = Query(None)) -> Any:
     """
     start OIDC login
     """
@@ -1291,13 +1286,13 @@ async def login_oidc(request: Request,
     try:
         return await provider.authorize_redirect(request, redirect_uri)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.get("/auth")
 async def auth(request: Request,
-               session_state: str = None,
-               code: str = None):
+               session_state: str | None = None,
+               code: str | None = None) -> Any:
     """
     get OIDC authorization code
     """
@@ -1309,7 +1304,7 @@ async def auth(request: Request,
 CHECK_CSRF = False
 
 
-def check_csrf(request, csrf_token=None, x_csrf_token=None):
+def check_csrf(request: Any, csrf_token: Any=None, x_csrf_token: Any=None) -> None:
     if not CHECK_CSRF:
         return
 
@@ -1330,7 +1325,7 @@ def check_csrf(request, csrf_token=None, x_csrf_token=None):
 
 @app.get("/logout")
 async def logout(request: Request,
-                 state: Optional[str] = Query(None, description="CSRF token")):
+                 state: str | None = Query(None, description="CSRF token")) -> Any:
     check_csrf(request, state)
     delete_token(request)
     delete_user_passwd(request)
@@ -1356,7 +1351,7 @@ class AccessToken(BaseModel):
 
 @app.get("/access_token")
 async def access_token(request: Request,
-                       x_csrf_token: Union[str, None] = Header(default=None)
+                       x_csrf_token: str | None = Header(default=None)
                        ) -> AccessToken:
     check_csrf(request, x_csrf_token)
     access_token = await get_access_token(request)
@@ -1368,7 +1363,7 @@ async def access_token(request: Request,
     return AccessToken.parse_obj({"access_token": access_token})
 
 
-def get_user_passwd(request):
+def get_user_passwd(request: Any) -> Any:
     username = request.session.get("username")
     password = request.session.get("password")
     if username is None or password is None:
@@ -1379,7 +1374,7 @@ def get_user_passwd(request):
     return username, password
 
 
-def set_user_passwd(request, username, password):
+def set_user_passwd(request: Any, username: Any, password: Any) -> None:
     request.session["username"] = username
     if fer:
         b = fer.encrypt(password.encode())
@@ -1387,14 +1382,14 @@ def set_user_passwd(request, username, password):
     request.session["password"] = password
 
 
-def delete_user_passwd(request: Request):
+def delete_user_passwd(request: Request) -> None:
     request.session.pop("username", None)
     request.session.pop("password", None)
 
 
 async def get_next_url(request: Request,
-                       env=None,
-                       authorization: Union[str, None] = None):
+                       env: Any=None,
+                       authorization: str | None = None) -> Any:
     try:
         if env is None:
             env = await set_env(request, authorization)
@@ -1416,7 +1411,7 @@ async def get_next_url(request: Request,
 async def login_passwd(request: Request,
                        username: str = Form(),
                        password: str = Form(),
-                       csrf_token: Optional[str] = Form(None)):
+                       csrf_token: str | None = Form(None)) -> Any:
     check_csrf(request, csrf_token)
     delete_token(request)
     set_user_passwd(request, username, password)
@@ -1436,12 +1431,12 @@ async def login_passwd(request: Request,
 
 
 #############################################################################
-def get_content_type(filename: str):
+def get_content_type(filename: str) -> Any:
     mime_type, _ = mimetypes.guess_type(filename)
     return mime_type or 'application/octet-stream'
 
 
-def fullpath(path: str):
+def fullpath(path: str) -> Any:
     if path.startswith(GFARM_PREFIX + ":"):
         return path
     return "/" + path
@@ -1458,7 +1453,7 @@ INVALID_AUTHZ = HTTPException(
 )
 
 
-async def parse_authorization(authz_str: str):
+async def parse_authorization(authz_str: str) -> Any:
     if not authz_str:
         if not ALLOW_ANONYMOUS:
             logger.error("anonymous access is not allowed")
@@ -1485,7 +1480,7 @@ async def parse_authorization(authz_str: str):
             user_pass_str = b.decode()
         except Exception as e:
             logger.error(f"invalid Basic authorization: {e}")
-            raise INVALID_AUTHZ
+            raise INVALID_AUTHZ from e
         # USERNAME:PASSWORD
         user_pass = user_pass_str.split(":", 1)
         if len(user_pass) >= 2:
@@ -1506,7 +1501,7 @@ async def parse_authorization(authz_str: str):
     return authz_type, user, passwd
 
 
-async def switch_auth_from_session(request):
+async def switch_auth_from_session(request: Any) -> Any:
     # get access token from session in cookie
     try:
         access_token = await get_access_token(request)
@@ -1537,7 +1532,7 @@ LOG_CLIENT_IP_KEY = "_GFARM_HTTP_CLIENT_IP"
 GFARM_USERNAME_SESSION_KEY = "gfarm_username"
 
 
-async def set_env(request, authorization):
+async def set_env(request: Any, authorization: Any) -> Any:
     ipaddr = get_client_ip_from_request(request)
 
     env = {'PATH': os.environ['PATH']}
@@ -1563,7 +1558,7 @@ async def set_env(request, authorization):
         except Exception as e:
             logger.error(f"{ipaddr} Invalid Bearer token:"
                          f" access_token={access_token}, error={e}")
-            raise INVALID_AUTHZ
+            raise INVALID_AUTHZ from e
         if user is not None:
             env.update({'GFARM_SASL_USER': user})
         env.update({
@@ -1603,23 +1598,25 @@ async def set_env(request, authorization):
     return env
 
 
-def get_user_from_env(env):
+def get_user_from_env(env: Any) -> Any:
     return env.get(LOG_USERNAME_KEY, "UNKNOWN_USER")
 
 
-def get_client_ip_from_env(env):
+def get_client_ip_from_env(env: Any) -> Any:
     return env.get(LOG_CLIENT_IP_KEY, "NO_CLIENT_IP")
 
 
-def get_client_ip_from_request(request):
-    # https://www.starlette.io/requests/#client-address
+def get_client_ip_from_request(request: Any) -> Any:
+    # https -> Any://www.starlette.io/requests/#client-address
     return request.client.host
 
 
 # Used only by archive_files()
 # - Creates a token file and sets its path in env when filepath is None.
 # - Updates the token file when filepath is not None.
-async def update_token_file(request, env, filepath=None, expire=None):
+async def update_token_file(
+    request: Any, env: Any, filepath: Any = None, expire: Any = None
+) -> Any:
     token_file = filepath
 
     if expire is not None:
@@ -1661,9 +1658,9 @@ async def update_token_file(request, env, filepath=None, expire=None):
 
 
 #############################################################################
-def keyval(s):
+def keyval(s: Any) -> Any:
     # s: "  Key1: Val1..."
-    # return: "Key1", "Val1..."
+    # return -> Any: "Key1", "Val1..."
     kv = s.split(":", 1)
     if len(kv) == 2:
         key, val = kv
@@ -1675,7 +1672,7 @@ def keyval(s):
     return key, val
 
 
-def timestamp_to_unix(timestamp_str):
+def timestamp_to_unix(timestamp_str: Any) -> Any:
     try:
         dt_object = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S.%f %z")
         unix_timestamp = dt_object.timestamp()
@@ -1686,7 +1683,7 @@ def timestamp_to_unix(timestamp_str):
 
 
 class UpdateStat(BaseModel):
-    Mode: Optional[str] = None
+    Mode: str | None = None
 
     model_config = {
         "json_schema_extra": {
@@ -1700,28 +1697,28 @@ class UpdateStat(BaseModel):
 
 
 class Stat(BaseModel):
-    File: Optional[str] = None
-    Filetype: Optional[str] = None
-    Size: Optional[int] = None
-    Uid: Optional[str] = None
-    Gid: Optional[str] = None
-    Mode: Optional[str] = None
-    Gen: Optional[int] = None
-    Inode: Optional[int] = None
-    Ncopy: Optional[int] = None
-    Links: Optional[int] = None
-    AccessSeconds: Optional[int] = None
-    AccessNanos: Optional[int] = None
-    Access: Optional[str] = None
-    ModifySeconds: Optional[int] = None
-    ModifyNanos: Optional[int] = None
-    Modify: Optional[str] = None
-    ChangeSeconds: Optional[int] = None
-    ChangeNanos: Optional[int] = None
-    Change: Optional[str] = None
-    MetadataHost: Optional[str] = None
-    MetadataPort: Optional[str] = None
-    MetadataUser: Optional[str] = None
+    File: str | None = None
+    Filetype: str | None = None
+    Size: int | None = None
+    Uid: str | None = None
+    Gid: str | None = None
+    Mode: str | None = None
+    Gen: int | None = None
+    Inode: int | None = None
+    Ncopy: int | None = None
+    Links: int | None = None
+    AccessSeconds: int | None = None
+    AccessNanos: int | None = None
+    Access: str | None = None
+    ModifySeconds: int | None = None
+    ModifyNanos: int | None = None
+    Modify: str | None = None
+    ChangeSeconds: int | None = None
+    ChangeNanos: int | None = None
+    Change: str | None = None
+    MetadataHost: str | None = None
+    MetadataPort: str | None = None
+    MetadataUser: str | None = None
 
     model_config = {
         "json_schema_extra": {
@@ -1755,7 +1752,7 @@ class Stat(BaseModel):
     }
 
 
-def parse_gfstat(file_info_str):
+def parse_gfstat(file_info_str: Any) -> Any:
     file_info = {}
     lines = file_info_str.splitlines()
     for line in lines:
@@ -1817,7 +1814,7 @@ def parse_gfstat(file_info_str):
     return Stat.model_validate(file_info)  # Pydantic V2
 
 
-def from_rwx(rwx, highchar):
+def from_rwx(rwx: Any, highchar: Any) -> Any:
     perm = 0
     highbit = 0
     r = rwx[0]
@@ -1839,8 +1836,8 @@ def from_rwx(rwx, highchar):
 
 class ACInfo(BaseModel):
     acl_type: str
-    acl_name: Union[str, None]
-    acl_perms: Dict[str, bool]
+    acl_name: str | None
+    acl_perms: dict[str, bool]
     is_default: bool
 
     model_config = {
@@ -1862,9 +1859,9 @@ class ACInfo(BaseModel):
 
 
 class ACList(BaseModel):
-    acl: List[ACInfo]
+    acl: list[ACInfo]
 
-    def make_acl_str(self, join_char) -> str:
+    def make_acl_str(self, join_char: Any) -> str:
         acl_parts = []
         for acinfo in self.acl:
             prefix = "default:" if acinfo.is_default else ""
@@ -1875,7 +1872,7 @@ class ACList(BaseModel):
             x_part = "x" if acinfo.acl_perms["x"] else "-"
             acl_parts.append(f"{prefix}{type_part}{name_part}" +
                              f"{r_part}{w_part}{x_part}")
-        return join_char.join(acl_parts)
+        return str(join_char.join(acl_parts))
 
     model_config = {
         "json_schema_extra": {
@@ -1895,7 +1892,7 @@ class ACList(BaseModel):
     }
 
 
-def parse_gfgetfacl(acl_str) -> Union[ACList, None]:
+def parse_gfgetfacl(acl_str: Any) -> ACList | None:
     acl = []
     lines = acl_str.strip().split('\n')
     for line in lines:
@@ -1926,7 +1923,7 @@ def parse_gfgetfacl(acl_str) -> Union[ACList, None]:
     return ACList(acl=acl)
 
 
-def parse_gfcksum(data):
+def parse_gfcksum(data: Any) -> Any:
     checksums = []
     for line in data.strip().splitlines():
         parts = line.strip().split(maxsplit=3)
@@ -1941,8 +1938,8 @@ def parse_gfcksum(data):
 
 
 #############################################################################
-async def gfwhoami(env):
-    args = []
+async def gfwhoami(env: Any) -> Any:
+    args: list[str] = []
     return await asyncio.create_subprocess_exec(
         'gfwhoami', *args,
         env=env,
@@ -1951,7 +1948,7 @@ async def gfwhoami(env):
         stderr=asyncio.subprocess.PIPE)
 
 
-async def gfrm(env, path, force=False, recursive=False):
+async def gfrm(env: Any, path: Any, force: Any=False, recursive: Any=False) -> Any:
     args = []
     if force:
         args.append("-f")
@@ -1966,7 +1963,7 @@ async def gfrm(env, path, force=False, recursive=False):
         stderr=asyncio.subprocess.PIPE)
 
 
-async def gfmv(env, src, dest):
+async def gfmv(env: Any, src: Any, dest: Any) -> Any:
     args = [src, dest]
     return await asyncio.create_subprocess_exec(
         'gfmv', *args,
@@ -1976,7 +1973,7 @@ async def gfmv(env, src, dest):
         stderr=asyncio.subprocess.PIPE)
 
 
-def sync_gfexport(env, path):
+def sync_gfexport(env: Any, path: Any) -> Any:
     args = ['gfexport', path]
     return subprocess.Popen(
         args, shell=False, close_fds=True,
@@ -1986,7 +1983,7 @@ def sync_gfexport(env, path):
         stderr=subprocess.DEVNULL), args
 
 
-async def gfexport(env, path):
+async def gfexport(env: Any, path: Any) -> Any:
     args = [path]
     return await asyncio.create_subprocess_exec(
         'gfexport', *args,
@@ -1996,7 +1993,7 @@ async def gfexport(env, path):
         stderr=asyncio.subprocess.PIPE), args
 
 
-async def gfreg(env, path, mtime):
+async def gfreg(env: Any, path: Any, mtime: Any) -> Any:
     if mtime:
         args = ['-M', str(mtime)]
     else:
@@ -2010,13 +2007,13 @@ async def gfreg(env, path, mtime):
         stderr=asyncio.subprocess.PIPE), args
 
 
-async def gfls(env,
-               path,
-               _all=False,
-               _recursive=False,
-               _long=False,
-               _T=False,
-               effperm=False):
+async def gfls(env: Any,
+               path: Any,
+               _all: Any=False,
+               _recursive: Any=False,
+               _long: Any=False,
+               _T: Any=False,
+               effperm: Any=False) -> Any:
     args = []
     if _all:
         args.append('-a')
@@ -2054,15 +2051,15 @@ class Gfls_Entry:
 
     def __init__(
             self,
-            name: Optional[str] = None,
-            nlink: Optional[int] = None,
-            uname: Optional[str] = None,
-            gname: Optional[str] = None,
-            size: Optional[int] = None,
-            dirname: Optional[str] = None,
-            mtime_str: Optional[str] = None,
-            mode_str: Optional[str] = None,
-            perms: Optional[str] = None):
+            name: str | None = None,
+            nlink: int | None = None,
+            uname: str | None = None,
+            gname: str | None = None,
+            size: int | None = None,
+            dirname: str | None = None,
+            mtime_str: str | None = None,
+            mode_str: str | None = None,
+            perms: str | None = None) -> None:
         self.name = name
         self.nlink = nlink
         self.uname = uname
@@ -2074,7 +2071,7 @@ class Gfls_Entry:
         self.set_mode(mode_str)
         self.set_linkname(name, self.is_sym)
 
-    def set_dirname(self, dirname):
+    def set_dirname(self, dirname: Any) -> None:
         self.dirname = dirname
         if dirname is not None:
             if self.name == "." or self.name is None:
@@ -2082,7 +2079,7 @@ class Gfls_Entry:
             else:
                 self.path = os.path.join(self.dirname, self.name)
 
-    def set_mode(self, mode_str):
+    def set_mode(self, mode_str: Any) -> None:
         self.mode_str = mode_str
         if mode_str is None:
             self.mode = None
@@ -2103,7 +2100,7 @@ class Gfls_Entry:
         self.is_dir = mode_str.startswith('d')
         self.is_sym = mode_str.startswith('l')
 
-    def set_mtime(self, mtime_str):
+    def set_mtime(self, mtime_str: Any) -> None:
         self.mtime_str = mtime_str
         if mtime_str is None:
             self.mtime = None
@@ -2112,7 +2109,7 @@ class Gfls_Entry:
             time.strptime(mtime_str, '%b %d %H:%M:%S %Y'))
         self.mtime = mtime
 
-    def set_linkname(self, name, is_sym):
+    def set_linkname(self, name: Any, is_sym: Any) -> None:
         self.linkname = ''
         if is_sym is None:
             return
@@ -2121,10 +2118,10 @@ class Gfls_Entry:
             self.name = pair[0]
             self.linkname = pair[1]
 
-    def set_line(self, line):
+    def set_line(self, line: Any) -> None:
         self.line = line
 
-    def json_dump(self):
+    def json_dump(self) -> Any:
         return {
             "mode_str": self.mode_str,
             "is_file": not self.is_dir and not self.is_sym,
@@ -2141,11 +2138,17 @@ class Gfls_Entry:
             "perms": self.perms
         }
 
-    def line_dump(self):
+    def line_dump(self) -> Any:
         return self.line
 
-    def parse(line,
-              is_file, long_format, full_format_time, effperm, dirname=None):
+    def parse(
+        line: Any,
+        is_file: Any,
+        long_format: Any,
+        full_format_time: Any,
+        effperm: Any,
+        dirname: Any = None,
+    ) -> Any:
         if not long_format:
             return line
 
@@ -2178,7 +2181,7 @@ class Gfls_Entry:
         new_entry = Gfls_Entry(name, nlink, uname, gname,
                                size, dirname, mtime_str, mode_str, perms)
 
-        if is_file:
+        if is_file and new_entry.name is not None:
             new_entry.name = os.path.basename(new_entry.name)
 
         new_entry.set_line(line)
@@ -2187,20 +2190,20 @@ class Gfls_Entry:
 
 
 async def gfls_generator(
-        env,
-        path,
-        is_file,
+        env: Any,
+        path: Any,
+        is_file: Any,
         show_hidden: bool = True,
         recursive: bool = True,
         long_format: bool = True,
         time_format: Literal['full', 'short'] = 'full',
         effperm: bool = False,
-        ign_err: bool = False) -> AsyncGenerator[Union[str, Gfls_Entry], None]:
+        ign_err: bool = False) -> AsyncGenerator[str | Gfls_Entry, None]:
     dirname = os.path.dirname(path) if is_file else path
     p = await gfls(env, path,
                    show_hidden, recursive, long_format, time_format, effperm)
 
-    elist = []
+    elist: list[str] = []
     stderr_task = asyncio.create_task(log_stderr("gfls", p, elist))
     seen_lines = []
 
@@ -2240,7 +2243,7 @@ async def gfls_generator(
         raise RuntimeError(msg)
 
 
-async def gfmkdir(env, path, p=False):
+async def gfmkdir(env: Any, path: Any, p: Any=False) -> Any:
     args = []
     if p:
         args.append('-p')
@@ -2253,7 +2256,7 @@ async def gfmkdir(env, path, p=False):
         stderr=asyncio.subprocess.PIPE)
 
 
-async def gfrmdir(env, path):
+async def gfrmdir(env: Any, path: Any) -> Any:
     args = [path]
     return await asyncio.create_subprocess_exec(
         'gfrmdir', *args,
@@ -2263,7 +2266,7 @@ async def gfrmdir(env, path):
         stderr=asyncio.subprocess.PIPE)
 
 
-async def gfln(env, srcpath, linkpath, symlink):
+async def gfln(env: Any, srcpath: Any, linkpath: Any, symlink: Any) -> Any:
     args = []
     if symlink:
         args.append("-s")
@@ -2278,7 +2281,7 @@ async def gfln(env, srcpath, linkpath, symlink):
         stderr=asyncio.subprocess.PIPE)
 
 
-async def gfstat(env, path, metadata, check_symlink=None):
+async def gfstat(env: Any, path: Any, metadata: Any, check_symlink: Any=None) -> Any:
     args = []
     if metadata:
         args.append('-M')
@@ -2293,7 +2296,7 @@ async def gfstat(env, path, metadata, check_symlink=None):
         stderr=asyncio.subprocess.PIPE)
 
 
-async def gfchmod(env, path, mode):
+async def gfchmod(env: Any, path: Any, mode: Any) -> Any:
     args = [mode, path]
     return await asyncio.create_subprocess_exec(
         'gfchmod', *args,
@@ -2303,8 +2306,12 @@ async def gfchmod(env, path, mode):
         stderr=asyncio.subprocess.PIPE)
 
 
-async def gfcksum(env,
-                  cmd: str = None, paths: List[str] = None, host: str = None):
+async def gfcksum(
+    env: Any,
+    cmd: str | None = None,
+    paths: list[str] | None = None,
+    host: str | None = None,
+) -> Any:
     args = []
     if cmd:
         args.append(f"-{cmd}")
@@ -2321,12 +2328,12 @@ async def gfcksum(env,
         stderr=asyncio.subprocess.PIPE), args
 
 
-async def gfptar(env,
+async def gfptar(env: Any,
                  cmd: str,
-                 outdir,
-                 basedir,
-                 src: List[str],
-                 options=None):
+                 outdir: Any,
+                 basedir: Any,
+                 src: list[str],
+                 options: Any=None) -> Any:
     args = []
     if options:
         args.extend(options)
@@ -2350,7 +2357,7 @@ async def gfptar(env,
         stderr=asyncio.subprocess.PIPE), args
 
 
-async def gfuser(env, username: str = None, cmd: str = None):
+async def gfuser(env: Any, username: str | None = None, cmd: str | None = None) -> Any:
     args = []
     if cmd:
         args.append(f"-{cmd}")
@@ -2364,7 +2371,9 @@ async def gfuser(env, username: str = None, cmd: str = None):
         stderr=asyncio.subprocess.PIPE), args
 
 
-async def gfgroup(env, groupname: str = None, cmd: str = None):
+async def gfgroup(
+    env: Any, groupname: str | None = None, cmd: str | None = None
+) -> Any:
     args = []
     if cmd is not None:
         args.append(f"-{cmd}")
@@ -2378,9 +2387,9 @@ async def gfgroup(env, groupname: str = None, cmd: str = None):
         stderr=asyncio.subprocess.PIPE), args
 
 
-async def gfsetfacl(env, path,
-                    _b=False, _k=False, _n=False, _r=False,
-                    acl_spec=None, acl_file=None):
+async def gfsetfacl(env: Any, path: Any,
+                    _b: Any=False, _k: Any=False, _n: Any=False, _r: Any=False,
+                    acl_spec: Any=None, acl_file: Any=None) -> Any:
     args = []
     if _b:
         args.append("-b")
@@ -2403,7 +2412,7 @@ async def gfsetfacl(env, path,
         stderr=asyncio.subprocess.PIPE), args
 
 
-async def gfgetfacl(env, path):
+async def gfgetfacl(env: Any, path: Any) -> Any:
     args = [path]
     return await asyncio.create_subprocess_exec(
         'gfgetfacl', *args,
@@ -2413,9 +2422,9 @@ async def gfgetfacl(env, path):
         stderr=asyncio.subprocess.PIPE), args
 
 
-async def get_username(env):
+async def get_username(env: Any) -> Any:
     p = await gfwhoami(env)
-    elist = []
+    elist: list[str] = []
     stderr_task = asyncio.create_task(log_stderr("gfwhoami", p, elist))
     data = await p.stdout.read()
     stdout = data.decode()
@@ -2430,9 +2439,9 @@ async def get_username(env):
     return stdout.rstrip()
 
 
-async def get_groupuser(env, groupname):
+async def get_groupuser(env: Any, groupname: Any) -> Any:
     p, _ = await gfgroup(env, groupname)
-    elist = []
+    elist: list[str] = []
     stderr_task = asyncio.create_task(log_stderr("gfgroup", p, elist))
     data = await p.stdout.read()
     stdout = data.decode()
@@ -2453,17 +2462,17 @@ class FileInfo:
     mtime: int | None = None
 
     def __init__(self, exists: bool, is_file: bool, size: int,
-                 mtime: Optional[int] = None):
+                 mtime: int | None = None) -> None:
         self.exists = exists
         self.is_file = is_file
         self.size = size
         self.mtime = mtime
 
 
-async def get_file_info(env, path) -> FileInfo:
+async def get_file_info(env: Any, path: Any) -> FileInfo:
     metadata = False
     proc = await gfstat(env, path, metadata)
-    elist = []
+    elist: list[str] = []
     stderr_task = asyncio.create_task(log_stderr("gfstat", proc, elist))
     data = await proc.stdout.read()
     stdout = data.decode()
@@ -2487,18 +2496,21 @@ async def get_file_info(env, path) -> FileInfo:
     )
 
 
-async def can_access(env, path, check_perm="w"):
+async def can_access(env: Any, path: Any, check_perm: Any="w") -> Any:
     try:
         info = await get_file_info(env, path)
     except Exception:
         return False
     async for entry in gfls_generator(env, path, info.is_file, effperm=True):
-        if check_perm in entry.perms:
+        if (isinstance(entry, Gfls_Entry) and entry.perms is not None
+                and check_perm in entry.perms):
             return True
     return False
 
 
-async def match_checksum(env, method, apiname, src, dst, elist):
+async def match_checksum(
+    env: Any, method: Any, apiname: Any, src: Any, dst: Any, elist: Any
+) -> Any:
     # check sum
     paths = [src, dst]
     opname = "gfcksum"
@@ -2521,9 +2533,9 @@ async def match_checksum(env, method, apiname, src, dst, elist):
     return True, None
 
 
-async def gfuser_info(env, gfarm_username):
+async def gfuser_info(env: Any, gfarm_username: Any) -> Any:
     proc, _ = await gfuser(env, gfarm_username, "l")
-    elist = []
+    elist: list[str] = []
     stderr_task = asyncio.create_task(log_stderr("gfuser", proc, elist))
     res = await proc.stdout.read()
     stdout = res.decode()
@@ -2542,7 +2554,7 @@ async def gfuser_info(env, gfarm_username):
     return name, authority, home_directory, identifier
 
 
-async def get_lsinfo(env, path, depth) -> Gfls_Entry:
+async def get_lsinfo(env: Any, path: Any, depth: Any) -> Gfls_Entry:
     if depth > RECURSIVE_MAX_DEPTH:
         raise RuntimeError(
             f"Reached maximum symlink follow limit ({depth})")
@@ -2553,8 +2565,10 @@ async def get_lsinfo(env, path, depth) -> Gfls_Entry:
 
     async for entry in gfls_generator(env, path, info.is_file,
                                       show_hidden=True):
+        if not isinstance(entry, Gfls_Entry):
+            continue
         entry.name = os.path.basename(path)
-        if entry.is_sym:
+        if entry.is_sym and entry.linkname is not None:
             if ":" in entry.linkname or \
                     entry.linkname.startswith("/"):
                 nextpath = entry.linkname
@@ -2573,7 +2587,7 @@ async def get_lsinfo(env, path, depth) -> Gfls_Entry:
 #############################################################################
 async def log_stderr(command: str,
                      process: asyncio.subprocess.Process,
-                     elist: list) -> None:
+                     elist: list[str]) -> None:
     if process.stderr is None:
         return
     while True:
@@ -2586,13 +2600,13 @@ async def log_stderr(command: str,
             break
 
 
-def last_emsg(elist):
+def last_emsg(elist: Any) -> Any:
     if len(elist) > 0:
         return elist[-1]
     return ""
 
 
-def is_utf8(s):
+def is_utf8(s: Any) -> Any:
     try:
         s.encode('utf-8').decode('utf-8')
         return True
@@ -2602,12 +2616,14 @@ def is_utf8(s):
 
 class AuthenticationError(Exception):
     # Unauthenticated: missing/invalid/expired credentials.
-    def __init__(self, message, *, stderr=None):
+    def __init__(self, message: Any, *, stderr: Any=None) -> None:
         super().__init__(message)
         self.stderr = stderr or []
 
 
-def gfarm_http_error(command, code, message, stdout, elist):
+def gfarm_http_error(
+    command: Any, code: Any, message: Any, stdout: Any, elist: Any
+) -> Any:
     detail = {
         "command": command,
         "message": message,
@@ -2629,7 +2645,7 @@ EXC_TO_STATUS = {
 }
 
 
-def classify_gfarm_error(elist: list[str]):
+def classify_gfarm_error(elist: list[str]) -> Any:
     errstr = str(elist).lower()
     msg = last_emsg(elist)
     if "no such file or directory" in errstr:
@@ -2645,7 +2661,11 @@ def classify_gfarm_error(elist: list[str]):
     return RuntimeError(msg or "Internal Server Error")
 
 
-def raise_gfarm_http_error(command, err: Exception, stdout="", elist=[]):
+def raise_gfarm_http_error(
+    command: Any, err: Exception, stdout: Any = "", elist: Any = None
+) -> NoReturn:
+    if elist is None:
+        elist = []
     # Select HTTP code depending on exception class (undefined is 500)
     code = next(
         (code for exc, code in EXC_TO_STATUS.items() if isinstance(err, exc)),
@@ -2658,10 +2678,10 @@ def raise_gfarm_http_error(command, err: Exception, stdout="", elist=[]):
     raise gfarm_http_error(command, code, message, stdout, error_list)
 
 
-async def gfarm_command_standard_response(env, proc, command):
+async def gfarm_command_standard_response(env: Any, proc: Any, command: Any) -> Any:
     user = get_user_from_env(env)
     ipaddr = get_client_ip_from_env(env)
-    elist = []
+    elist: list[str] = []
     stderr_task = asyncio.create_task(log_stderr(command, proc, elist))
     data = await proc.stdout.read()
     stdout = data.decode()
@@ -2686,7 +2706,7 @@ async def gfarm_command_standard_response(env, proc, command):
     return PlainTextResponse(content=stdout)
 
 
-async def read_proc_output(opname, proc, elist):
+async def read_proc_output(opname: Any, proc: Any, elist: Any) -> Any:
     stderr_task = asyncio.create_task(log_stderr(opname, proc, elist))
     data = await proc.stdout.read()
     stdout = data.decode()
@@ -2700,7 +2720,7 @@ async def read_proc_output(opname, proc, elist):
 #############################################################################
 @app.get("/conf/me")
 async def whoami(request: Request,
-                 authorization: Union[str, None] = Header(default=None)):
+                 authorization: str | None = Header(default=None)) -> Any:
     opname = "gfwhoami"
     apiname = "/conf/me"
     env = await set_env(request, authorization)
@@ -2734,7 +2754,7 @@ async def dir_list(gfarm_path: str,
                    time_format: Literal['full', 'short'] = 'full',
                    output_format: Literal['json', 'plain'] = 'json',
                    ign_err: bool = False,
-                   authorization: Union[str, None] = Header(default=None)):
+                   authorization: str | None = Header(default=None)) -> Any:
     opname = "gfls"
     apiname = "/dir"
     gfarm_path = fullpath(gfarm_path)
@@ -2747,9 +2767,9 @@ async def dir_list(gfarm_path: str,
     except Exception as err:
         raise_gfarm_http_error(opname, err)
 
-    output_data = []
+    output_data: list[Any] = []
 
-    async def list_generator():
+    async def list_generator() -> Any:
         try:
             async for entry in gfls_generator(
                     env, gfarm_path, info.is_file,
@@ -2801,14 +2821,14 @@ async def dir_list(gfarm_path: str,
 async def get_symlink(gfarm_path: str,
                       request: Request,
                       get_fullpath: bool = False,
-                      authorization: Union[str, None] = Header(default=None)):
+                      authorization: str | None = Header(default=None)) -> Any:
     apiname = "/symlink"
     opname = "gfstat"
     gfarm_path = fullpath(gfarm_path)
     env = await set_env(request, authorization)
     user = get_user_from_env(env)
     ipaddr = get_client_ip_from_env(env)
-    elist = []
+    elist: list[str] = []
     try:
         log_operation(env, request.method, apiname, opname, gfarm_path)
         metadata = True
@@ -2836,7 +2856,7 @@ async def get_symlink(gfarm_path: str,
                      f"stdout={lastentry.json_dump()}")
         return JSONResponse(content=lastentry.json_dump())
     except Exception as e:
-        raise raise_gfarm_http_error(opname, e, elist=elist)
+        raise raise_gfarm_http_error(opname, e, elist=elist) from e
 
 
 class FileOperation(BaseModel):
@@ -2860,7 +2880,7 @@ async def symlink_create(
         symlink_data: FileOperation,
         request: Request,
         symlink: bool = True,
-        authorization: Union[str, None] = Header(default=None)):
+        authorization: str | None = Header(default=None)) -> Any:
     opname = "gfln"
     apiname = "/symlink"
     gfarm_path = symlink_data.source
@@ -2875,8 +2895,8 @@ async def symlink_create(
 async def dir_create(gfarm_path: str,
                      request: Request,
                      p: bool = False,
-                     authorization: Union[str, None] = Header(default=None),
-                     x_csrf_token: Union[str, None] = Header(default=None)):
+                     authorization: str | None = Header(default=None),
+                     x_csrf_token: str | None = Header(default=None)) -> Any:
     check_csrf(request, x_csrf_token)
     opname = "gfmkdir"
     apiname = "/dir"
@@ -2890,8 +2910,8 @@ async def dir_create(gfarm_path: str,
 @app.delete("/dir/{gfarm_path:path}")
 async def dir_remove(gfarm_path: str,
                      request: Request,
-                     authorization: Union[str, None] = Header(default=None),
-                     x_csrf_token: Union[str, None] = Header(default=None)):
+                     authorization: str | None = Header(default=None),
+                     x_csrf_token: str | None = Header(default=None)) -> Any:
     check_csrf(request, x_csrf_token)
     opname = "gfrmdir"
     apiname = "/dir"
@@ -2927,7 +2947,7 @@ ASYNC_GFEXPORT = str2bool(conf.GFARM_HTTP_ASYNC_GFEXPORT)
 async def file_export(gfarm_path: str,
                       request: Request,
                       action: str = 'view',
-                      authorization: Union[str, None] = Header(default=None)):
+                      authorization: str | None = Header(default=None)) -> Any:
     opname = "gfexport"
     apiname = "/file"
     gfarm_path = fullpath(gfarm_path)
@@ -2943,7 +2963,7 @@ async def file_export(gfarm_path: str,
         code = status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
         message = "The requested URL does not represent a file."
         stdout = ""
-        elist = []
+        elist: list[str] = []
         raise gfarm_http_error(opname, code, message, stdout, elist)
 
     if int(info.size) <= 0:
@@ -2975,7 +2995,7 @@ async def file_export(gfarm_path: str,
         stdout = ""
         raise gfarm_http_error(opname, code, message, stdout, elist)
 
-    async def generate():
+    async def generate() -> Any:
         yield first_byte
 
         while True:
@@ -3023,9 +3043,9 @@ class ZipStreamWriter:
     Stream-like writer for ZipFile that supports async chunk consumption.
     """
     def __init__(self, chunk_size: int = ZIP_BUFSIZE,
-                 loop: Optional[asyncio.AbstractEventLoop] = None,
-                 flush_immediately: bool = False):
-        self._buffer = deque()  # A queue for storing byte chunks
+                 loop: asyncio.AbstractEventLoop | None = None,
+                 flush_immediately: bool = False) -> None:
+        self._buffer: deque[bytes] = deque()  # A queue for storing byte chunks
         self._closed = False
         self._chunk_size = chunk_size
         self._current_chunk = bytearray()
@@ -3054,8 +3074,8 @@ class ZipStreamWriter:
 
         return len(data)
 
-    def _notify(self):
-        async def notify():
+    def _notify(self) -> None:
+        async def notify() -> None:
             async with self._condition:
                 self._condition.notify_all()
         asyncio.run_coroutine_threadsafe(notify(), self._loop)
@@ -3075,18 +3095,18 @@ class ZipStreamWriter:
                 self._current_chunk.clear()
                 yield data
 
-    def close(self):
+    def close(self) -> None:
         self._closed = True
         self._notify()
 
-    def flush(self):
+    def flush(self) -> None:
         pass
 
 
 @app.post("/zip")
 async def zip_export(request: Request,
-                     paths: List[str] = Form(...),
-                     authorization: Union[str, None] = Header(default=None)):
+                     paths: list[str] = Form(...),
+                     authorization: str | None = Header(default=None)) -> Any:
     opname = "gfexport"
     apiname = "/zip"
     env = await set_env(request, authorization)
@@ -3103,22 +3123,22 @@ async def zip_export(request: Request,
         filedatas.append((filepath, info.is_file))
 
     async def add_entry_to_zip(zipf: zipfile.ZipFile, entry: Gfls_Entry,
-                               loop, executor):
-        rel_path = os.path.join(entry.dirname, entry.name)
+                               loop: Any, executor: Any) -> None:
+        rel_path = os.path.join(entry.dirname, entry.name or "")
         rel_path = os.path.normpath(rel_path)
         logger.debug(f"{rel_path}: zipping")
 
         zipinfo = zipfile.ZipInfo(filename=rel_path)
         zipinfo.date_time = time.localtime(entry.mtime)[:6]
         zipinfo.compress_type = zipfile.ZIP_DEFLATED
-        zipinfo.external_attr = (entry.mode & 0xFFFF) << 16
+        zipinfo.external_attr = ((entry.mode or 0) & 0xFFFF) << 16
 
         if entry.is_sym:
             zipinfo.create_system = 3  # Unix
             zipinfo.external_attr |= 0xA000 << 16  # symlink bit
             await loop.run_in_executor(
                 executor,
-                lambda: zipf.writestr(zipinfo, entry.linkname.encode()))
+                lambda: zipf.writestr(zipinfo, (entry.linkname or "").encode()))
         elif entry.is_dir:
             zipinfo.external_attr |= 0x4000 << 16  # directory bit
             if not rel_path.endswith('/'):
@@ -3132,7 +3152,7 @@ async def zip_export(request: Request,
             try:
                 env_e = await set_env(request, authorization)
                 proc, _ = await gfexport(env_e, entry.path)
-                elist = []
+                elist: list[str] = []
                 stderr_task = asyncio.create_task(
                     log_stderr(opname, proc, elist))
 
@@ -3181,7 +3201,7 @@ async def zip_export(request: Request,
                         await proc.wait()
                 logger.debug("zip_export: add_entry_to_zip close")
 
-    async def create_zip(zip_writer):
+    async def create_zip(zip_writer: Any) -> None:
         # ZipFile is NOT thread-safe; restrict writes to a single thread
         executor = getattr(request.app.state,
                            "zip_executor",
@@ -3197,7 +3217,7 @@ async def zip_export(request: Request,
 
         stop_evt = asyncio.Event()
 
-        async def producer():
+        async def producer() -> None:
             """
             Traverse filedatas and push entries produced
             by gfls_generator to the queue.
@@ -3212,6 +3232,8 @@ async def zip_export(request: Request,
                             stop_evt.set()
                         if stop_evt.is_set():
                             raise asyncio.CancelledError
+                        if not isinstance(entry, Gfls_Entry):
+                            continue
                         if entry.name in (".", ".."):
                             continue
                         dirname = entry.dirname
@@ -3233,7 +3255,7 @@ async def zip_export(request: Request,
                 await gfls_queue.put(None)
                 logger.debug("zip_export: producer close")
 
-        async def consumer():
+        async def consumer() -> None:
             """
             Pop entries from the queue and write them into the Zip.
             """
@@ -3277,7 +3299,7 @@ async def zip_export(request: Request,
         finally:
             logger.debug("zip_export: create_zip close")
 
-    async def generate():
+    async def generate() -> Any:
         zip_writer = ZipStreamWriter(loop=asyncio.get_running_loop(),
                                      flush_immediately=True)
         task = asyncio.create_task(create_zip(zip_writer))
@@ -3325,9 +3347,9 @@ async def zip_export(request: Request,
 async def file_import(gfarm_path: str,
                       request: Request,
                       x_file_timestamp:
-                      Union[str, None] = Header(default=None),
-                      authorization: Union[str, None] = Header(default=None),
-                      x_csrf_token: Union[str, None] = Header(default=None)):
+                      str | None = Header(default=None),
+                      authorization: str | None = Header(default=None),
+                      x_csrf_token: str | None = Header(default=None)) -> Any:
     check_csrf(request, x_csrf_token)
     # TODO overwrite=1, default 0
     opname = "gfreg"
@@ -3349,7 +3371,7 @@ async def file_import(gfarm_path: str,
     tmppath = os.path.join(dirname, tmpname)
 
     p, args = await gfreg(env, tmppath, x_file_timestamp)
-    elist = []
+    elist: list[str] = []
     stderr_task = asyncio.create_task(log_stderr(opname, p, elist))
     error = None
     try:
@@ -3404,8 +3426,8 @@ async def file_remove(gfarm_path: str,
                       request: Request,
                       force: bool = False,
                       recursive: bool = False,
-                      authorization: Union[str, None] = Header(default=None),
-                      x_csrf_token: Union[str, None] = Header(default=None)):
+                      authorization: str | None = Header(default=None),
+                      x_csrf_token: str | None = Header(default=None)) -> Any:
     check_csrf(request, x_csrf_token)
     opname = "gfrm"
     apiname = "/file"
@@ -3419,7 +3441,7 @@ async def file_remove(gfarm_path: str,
 @app.put("/copy")
 async def file_copy(copy_data: FileOperation,
                     request: Request,
-                    authorization: Union[str, None] = Header(default=None)):
+                    authorization: str | None = Header(default=None)) -> Any:
     opname = "gfexport"
     apiname = "/copy"
     gfarm_path = copy_data.source
@@ -3430,7 +3452,7 @@ async def file_copy(copy_data: FileOperation,
     env = await set_env(request, authorization)
     user = get_user_from_env(env)
     ipaddr = get_client_ip_from_env(env)
-    elist = []
+    elist: list[str] = []
 
     log_operation(env, request.method, apiname, opname, gfarm_path)
 
@@ -3470,13 +3492,13 @@ async def file_copy(copy_data: FileOperation,
     stderr_reg = asyncio.create_task(log_stderr("gfreg", p_reg, elist))
     opname = "gfreg"
     log_operation(env, request.method, apiname, opname, gfarm_path)
-    current_status = {"copied": 0,
+    current_status: dict[str, Any] = {"copied": 0,
                       "total": info.size,
                       "warn": None,
                       "error": None,
                       "done": False}
 
-    async def progress_generator():
+    async def progress_generator() -> Any:
         copied = 1
         p_reg.stdin.write(first_byte)
         await p_reg.stdin.drain()
@@ -3575,8 +3597,8 @@ async def file_copy(copy_data: FileOperation,
 @app.post("/move")
 async def move_rename(request: Request,
                       move_data: FileOperation,
-                      authorization: Union[str, None] = Header(default=None),
-                      x_csrf_token: Union[str, None] = Header(default=None)):
+                      authorization: str | None = Header(default=None),
+                      x_csrf_token: str | None = Header(default=None)) -> Any:
     check_csrf(request, x_csrf_token)
     opname = "gfmv"
     apiname = "/move"
@@ -3594,14 +3616,14 @@ async def get_attr(gfarm_path: str,
                    request: Request,
                    check_sum: bool = False,
                    check_symlink: bool = False,
-                   authorization: Union[str, None] = Header(default=None)
-                   ) -> Stat:
+                   authorization: str | None = Header(default=None)
+                   ) -> Any:
     opname = "gfstat"
     apiname = "/attr"
     gfarm_path = fullpath(gfarm_path)
     result_json = {}
     stdout = ""
-    elist = []
+    elist: list[str] = []
     try:
         env = await set_env(request, authorization)
         user = get_user_from_env(env)
@@ -3659,19 +3681,19 @@ async def get_attr(gfarm_path: str,
         if "authentication error" in str(elist):
             code = status.HTTP_401_UNAUTHORIZED
             message = "Authentication error"
-            raise gfarm_http_error(opname, code, message, stdout, elist)
+            raise gfarm_http_error(opname, code, message, stdout, elist) from err
         else:
             code = status.HTTP_500_INTERNAL_SERVER_ERROR
             message = f"Internal Server Error ({opname} {str(err)})"
-            raise gfarm_http_error(opname, code, message, stdout, elist)
+            raise gfarm_http_error(opname, code, message, stdout, elist) from err
 
 
 @app.put("/attr/{gfarm_path:path}")
 async def change_attr(gfarm_path: str,
                       stat: UpdateStat,
                       request: Request,
-                      authorization: Union[str, None] = Header(default=None),
-                      x_csrf_token: Union[str, None] = Header(default=None)):
+                      authorization: str | None = Header(default=None),
+                      x_csrf_token: str | None = Header(default=None)) -> Any:
     check_csrf(request, x_csrf_token)
     gfarm_path = fullpath(gfarm_path)
     env = await set_env(request, authorization)
@@ -3697,8 +3719,8 @@ async def change_attr(gfarm_path: str,
 @app.get("/acl/{gfarm_path:path}")
 async def get_acl(gfarm_path: str,
                   request: Request,
-                  authorization: Union[str, None] = Header(default=None),
-                  x_csrf_token: Union[str, None] = Header(default=None)):
+                  authorization: str | None = Header(default=None),
+                  x_csrf_token: str | None = Header(default=None)) -> Any:
     opname = "gfgetfacl"
     apiname = "/acl"
     check_csrf(request, x_csrf_token)
@@ -3709,7 +3731,7 @@ async def get_acl(gfarm_path: str,
     log_operation(env, request.method, apiname, opname, "")
     logger.debug(f"{ipaddr}:0 user={user}, cmd={opname}, path={gfarm_path}")
     proc, args = await gfgetfacl(env, gfarm_path)
-    elist = []
+    elist: list[str] = []
     stderr_task = asyncio.create_task(log_stderr("gfgetfacl", proc, elist))
     data = await proc.stdout.read()
     stdout = data.decode()
@@ -3731,8 +3753,8 @@ async def get_acl(gfarm_path: str,
 async def set_acl(gfarm_path: str,
                   acl: ACList,
                   request: Request,
-                  authorization: Union[str, None] = Header(default=None),
-                  x_csrf_token: Union[str, None] = Header(default=None)):
+                  authorization: str | None = Header(default=None),
+                  x_csrf_token: str | None = Header(default=None)) -> Any:
     opname = "gfsetfacl"
     apiname = "/acl"
     check_csrf(request, x_csrf_token)
@@ -3745,7 +3767,7 @@ async def set_acl(gfarm_path: str,
     acl_str = acl.make_acl_str("\n") + "\n"
     proc, args = await gfsetfacl(env, gfarm_path, _b=True, acl_file="-")
     stdout, _ = await proc.communicate(input=acl_str.encode())
-    elist = []
+    elist: list[str] = []
     stdout = stdout.decode()
     return_code = await proc.wait()
     if return_code != 0:
@@ -3756,13 +3778,13 @@ async def set_acl(gfarm_path: str,
 
 
 async def get_name_list(request: Request,
-                        authorization: Union[str, None],
-                        x_csrf_token: Union[str, None],
+                        authorization: str | None,
+                        x_csrf_token: str | None,
                         opname: str,
                         apiname: str,
-                        exec_func: Callable,
-                        command: str = None,
-                        username: str = None):
+                        exec_func: Callable[..., Any],
+                        command: str | None = None,
+                        username: str | None = None) -> Any:
     check_csrf(request, x_csrf_token)
     env = await set_env(request, authorization)
     user = get_user_from_env(env)
@@ -3771,7 +3793,7 @@ async def get_name_list(request: Request,
     log_operation(env, request.method, apiname, opname, "")
 
     proc, args = await exec_func(env, username, command)
-    elist = []
+    elist: list[str] = []
     stderr_task = asyncio.create_task(log_stderr(opname, proc, elist))
     data = await proc.stdout.read()
     stdout = data.decode()
@@ -3790,10 +3812,10 @@ async def get_name_list(request: Request,
 @app.get("/users")
 async def get_usernames(request: Request,
                         long_format: bool = False,
-                        authorization: Union[str, None] = Header(default=None),
-                        x_csrf_token: Union[str, None] = Header(default=None)):
-    opname = "gfuser",
-    apiname = "/users",
+                        authorization: str | None = Header(default=None),
+                        x_csrf_token: str | None = Header(default=None)) -> Any:
+    opname = "gfuser"
+    apiname = "/users"
     command = "l" if long_format else None
     name_list = await get_name_list(request=request,
                                     authorization=authorization,
@@ -3822,10 +3844,10 @@ async def get_usernames(request: Request,
 @app.get("/groups")
 async def get_groups(request: Request,
                      long_format: bool = False,
-                     authorization: Union[str, None] = Header(default=None),
-                     x_csrf_token: Union[str, None] = Header(default=None)):
-    opname = "gfgroup",
-    apiname = "/groups",
+                     authorization: str | None = Header(default=None),
+                     x_csrf_token: str | None = Header(default=None)) -> Any:
+    opname = "gfgroup"
+    apiname = "/groups"
     command = "l" if long_format else None
     name_list = await get_name_list(request=request,
                                     authorization=authorization,
@@ -3851,9 +3873,9 @@ async def get_groups(request: Request,
 class Tar(BaseModel):
     command: str
     basedir: str
-    source: List[str]
+    source: list[str]
     outdir: str
-    options: List[str] | None
+    options: list[str] | None
 
     model_config = {
         "json_schema_extra": {
@@ -3875,7 +3897,7 @@ class Tar(BaseModel):
 async def archive_files(
         request: Request,
         tar_data: Tar,
-        authorization: Union[str, None] = Header(default=None)):
+        authorization: str | None = Header(default=None)) -> Any:
     opname = "gfptar"
     apiname = "/gfptar"
     env = await set_env(request, authorization)
@@ -3915,8 +3937,8 @@ async def archive_files(
             stdout = ""
             raise gfarm_http_error(opname, code, message, stdout, [])
 
-    p, args = await gfptar(env, cmd, outdir, basedir, src, options)
-    elist = []
+    p, args = await gfptar(env, cmd or "", outdir, basedir, src or [], options)
+    elist: list[str] = []
     stderr_task = asyncio.create_task(log_stderr(opname, p, elist))
 
     first_byte = await p.stdout.read(1)
@@ -3935,7 +3957,7 @@ async def archive_files(
                 f"os.remove({tokenfilepath}) error: {e}")
         raise gfarm_http_error(opname, code, message, stdout, elist)
 
-    async def progress_generator():
+    async def progress_generator() -> Any:
         try:
             exp = expire
             buffer = first_byte

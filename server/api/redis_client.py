@@ -1,11 +1,13 @@
 # redis_client.py
 from __future__ import annotations
-from typing import Optional
+
 import asyncio
 import uuid
+from typing import Any
+
 from redis.asyncio import Redis
 
-_RELEASE_LUA = b"""
+_RELEASE_LUA = """
 if redis.call('GET', KEYS[1]) == ARGV[1] then
   return redis.call('DEL', KEYS[1])
 else
@@ -19,13 +21,13 @@ class RedisClient:
                  host: str, port: int, db: int,
                  decode_responses: bool = False,
                  ssl_enable: bool = False,
-                 ssl_certfile: Optional[str] = None,
-                 ssl_keyfile: Optional[str] = None,
-                 ssl_ca_certs: Optional[str] = None,
-                 username: Optional[str] = None,
-                 password: Optional[str] = None,
+                 ssl_certfile: str | None = None,
+                 ssl_keyfile: str | None = None,
+                 ssl_ca_certs: str | None = None,
+                 username: str | None = None,
+                 password: str | None = None,
                  lock_prefix: str = "LOCK",
-                 logger=None):
+                 logger: Any = None):
         self._host = host
         self._port = port
         self._db = db
@@ -36,7 +38,7 @@ class RedisClient:
         self._ssl_ca_certs = ssl_ca_certs
         self._username = username
         self._password = password
-        self._client: Optional[Redis] = None
+        self._client: Redis | None = None
         self.lock_prefix = lock_prefix
         self.logger = logger
 
@@ -71,11 +73,11 @@ class RedisClient:
             await self._client.close()
             self._client = None
 
-    async def get(self, key: str) -> Optional[bytes | str]:
+    async def get(self, key: str) -> bytes | str | None:
         return await self.client.get(key)
 
     async def set(self, key: str, value: bytes | str) -> bool:
-        return await self.client.set(key, value)
+        return bool(await self.client.set(key, value))
 
     async def setex(self, key: str, ttl: int, value: bytes | str) -> bool:
         if self.logger:
@@ -90,7 +92,7 @@ class RedisClient:
 
     async def acquire_lock(self, key: str, ttl: int = 10,
                            retry_count: int = 3,
-                           retry_interval: float = 0.05):
+                           retry_interval: float = 0.05) -> tuple[bool, str]:
         if self.logger:
             self.logger.debug("RedisClient acquire_lock", key)
         lock_key = f"{self.lock_prefix}{key}"
@@ -118,7 +120,7 @@ class RedisClient:
         lock_key = f"{self.lock_prefix}{key}"
         try:
             res = await self.client.eval(_RELEASE_LUA, 1, lock_key, val)
-            return res == 1
+            return bool(res == 1)
         except Exception:
             if self.logger:
                 self.logger.warning("RedisClient release_lock failed", key)

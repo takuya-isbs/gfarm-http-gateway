@@ -1,12 +1,12 @@
-test: test-unit test-flake8 test-unit-webui-chromium
+test: test-unit lint-python test-unit-webui-chromium
 
-test-all: test-unit test-flake8 test-unit-webui-chromium test-client
+test-all: test-unit lint-python test-unit-webui-chromium test-client
 
-.PHONY: test test-all test-unit-webui-chromium test-unit-webui-all lint lint-python lint-frontend test-flake8
+.PHONY: test test-all test-unit-webui-chromium test-unit-webui-all lint lint-python lint-frontend test-ruff test-mypy
 
 lint: lint-python lint-frontend
 
-lint-python: test-flake8
+lint-python: test-ruff test-mypy
 
 lint-frontend:
 	npm --prefix frontend/app/react-app run lint
@@ -26,8 +26,11 @@ test-unit-verbose test-unit-v:
 test-client:
 	../client/test/gfarm-http-test.sh /tmp
 
-test-flake8:
-	./venv/bin/flake8 api
+test-ruff:
+	./venv/bin/ruff check api
+
+test-mypy:
+	./venv/bin/mypy api
 
 test-unit-webui-chromium:
 	npm --prefix frontend/app/react-app run test:unit-webui:chromium

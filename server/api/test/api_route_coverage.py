@@ -4,14 +4,17 @@ import argparse
 import json
 import os
 import sys
+from collections.abc import Iterator
+from typing import Any, cast
 from urllib.parse import unquote
-
 
 HTTP_METHODS = {"DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"}
 CLIENTS = ("cli", "webui", "combined")
 
 
-def find_openapi_operation(method, request_path, paths):
+def find_openapi_operation(
+    method: str, request_path: str, paths: dict[str, Any]
+) -> tuple[str, str] | None:
     """Return the OpenAPI method and path matching a client request."""
     method = method.upper()
     if method not in HTTP_METHODS:
@@ -45,10 +48,12 @@ def find_openapi_operation(method, request_path, paths):
     return None
 
 
-def analyze_coverage(openapi, requests):
+def analyze_coverage(
+    openapi: dict[str, Any], requests: list[dict[str, Any]]
+) -> dict[str, Any]:
     """Count OpenAPI operations, parameters, and values seen per client."""
     operations = list(_iter_operations(openapi))
-    result = {}
+    result: dict[str, Any] = {}
     for client in CLIENTS:
         operation_total = len(operations)
         operation_covered = 0
@@ -149,7 +154,9 @@ def analyze_coverage(openapi, requests):
     return result
 
 
-def _iter_operations(openapi):
+def _iter_operations(
+    openapi: dict[str, Any],
+) -> Iterator[tuple[str, str, list[dict[str, Any]]]]:
     for route, path_item in openapi.get("paths", {}).items():
         path_parameters = path_item.get("parameters") or []
         for method, operation in path_item.items():
@@ -165,20 +172,20 @@ def _iter_operations(openapi):
             yield method.upper(), route, list(parameters.values())
 
 
-def _resolve_schema(schema, components):
+def _resolve_schema(schema: Any, components: dict[str, Any]) -> dict[str, Any]:
     reference = schema.get("$ref") if isinstance(schema, dict) else None
     if not reference:
         return schema if isinstance(schema, dict) else {}
     name = reference.rsplit("/", 1)[-1]
-    return components.get("schemas", {}).get(name, {})
+    return cast(dict[str, Any], components.get("schemas", {}).get(name, {}))
 
 
-def _path_parameter_values(route, request_path):
+def _path_parameter_values(route: str, request_path: str) -> dict[str, list[str]]:
     route_parts = [part for part in route.strip("/").split("/") if part]
     request_parts = [
         unquote(part) for part in request_path.strip("/").split("/") if part
     ]
-    values = {}
+    values: dict[str, list[str]] = {}
     for index, route_part in enumerate(route_parts):
         if route_part.startswith("{") and route_part.endswith("}"):
             name = route_part[1:-1].split(":", 1)[0]
@@ -189,7 +196,7 @@ def _path_parameter_values(route, request_path):
     return values
 
 
-def _flag_values(schema):
+def _flag_values(schema: dict[str, Any]) -> list[str]:
     if schema.get("enum"):
         return [str(value) for value in schema["enum"]]
     if schema.get("type") == "boolean":
@@ -197,7 +204,7 @@ def _flag_values(schema):
     return []
 
 
-def _normalize_flag_value(value, schema):
+def _normalize_flag_value(value: Any, schema: dict[str, Any]) -> str:
     if schema.get("type") == "boolean":
         value = str(value).lower()
         if value in {"1", "on", "yes", "true"}:
@@ -207,22 +214,24 @@ def _normalize_flag_value(value, schema):
     return str(value)
 
 
-def _query_values(query, name):
+def _query_values(query: dict[str, Any], name: str) -> list[Any]:
     value = query.get(name, [])
     if isinstance(value, list):
         return value
     return [value]
 
 
-def _overall_rate(client_report):
+def _overall_rate(client_report: dict[str, Any]) -> float:
     sections = (client_report["operations"], client_report["parameters"],
                 client_report["values"])
     total = sum(section["total"] for section in sections)
     covered = sum(section["covered"] for section in sections)
-    return covered / total if total else 1.0
+    return float(covered / total) if total else 1.0
 
 
-def coverage_below_baseline(report, baseline):
+def coverage_below_baseline(
+    report: dict[str, Any], baseline: dict[str, Any]
+) -> bool:
     """Return whether any client coverage rate fell below its baseline."""
     for client in CLIENTS:
         for section in ("operations", "parameters", "values"):
@@ -233,13 +242,13 @@ def coverage_below_baseline(report, baseline):
     return False
 
 
-def _rate(section):
+def _rate(section: dict[str, Any]) -> float:
     if not section["total"]:
         return 1.0
-    return section["covered"] / section["total"]
+    return float(section["covered"] / section["total"])
 
 
-def _print_report(report, baseline):
+def _print_report(report: dict[str, Any], baseline: dict[str, Any]) -> int:
     for client in CLIENTS:
         client_report = report[client]
         print(f"{client}: overall {_overall_rate(client_report):.1%}")
@@ -278,7 +287,7 @@ def _print_report(report, baseline):
     return 0
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("request_log")
     parser.add_argument("--baseline", required=True)

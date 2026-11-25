@@ -1,4 +1,5 @@
 from copy import deepcopy
+from typing import Any
 
 from api_route_coverage import (
     analyze_coverage,
@@ -7,8 +8,8 @@ from api_route_coverage import (
 )
 
 
-def test_find_openapi_operation_matches_method_and_path():
-    paths = {
+def test_find_openapi_operation_matches_method_and_path() -> None:
+    paths: dict[str, dict[str, Any]] = {
         "/conf/me": {"get": {}},
         "/dir/{gfarm_path}": {"get": {}, "put": {}},
     }
@@ -19,14 +20,14 @@ def test_find_openapi_operation_matches_method_and_path():
         "PUT", "/dir/{gfarm_path}")
 
 
-def test_find_openapi_operation_rejects_unknown_method_or_path():
-    paths = {"/conf/me": {"get": {}}}
+def test_find_openapi_operation_rejects_unknown_method_or_path() -> None:
+    paths: dict[str, dict[str, Any]] = {"/conf/me": {"get": {}}}
 
     assert find_openapi_operation("POST", "/conf/me", paths) is None
     assert find_openapi_operation("GET", "/unknown", paths) is None
 
 
-def test_analyze_coverage_counts_operations_parameters_and_values_per_client():
+def test_analyze_coverage_counts_operations_parameters_and_values_per_client() -> None:
     openapi = {
         "paths": {
             "/file/{gfarm_path}": {
@@ -68,8 +69,8 @@ def test_analyze_coverage_counts_operations_parameters_and_values_per_client():
     assert report["combined"]["values"] == {"covered": 4, "total": 6}
 
 
-def test_coverage_below_baseline_detects_new_operation_and_flag():
-    openapi = {
+def test_coverage_below_baseline_detects_new_operation_and_flag() -> None:
+    openapi: dict[str, Any] = {
         "paths": {
             "/file": {
                 "get": {
@@ -103,7 +104,7 @@ def test_coverage_below_baseline_detects_new_operation_and_flag():
     assert coverage_below_baseline(report, baseline)
 
 
-def test_analyze_coverage_counts_enum_path_parameter_values():
+def test_analyze_coverage_counts_enum_path_parameter_values() -> None:
     openapi = {
         "paths": {
             "/mode/{mode}": {

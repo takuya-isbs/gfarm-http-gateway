@@ -1,16 +1,15 @@
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-
 from redis_client import RedisClient
 
 
-def make_client():
+def make_client() -> RedisClient:
     return RedisClient("redis", 6379, 0, lock_prefix="TEST-")
 
 
 @pytest.mark.asyncio
-async def test_connect_reuses_client_and_close_resets_it():
+async def test_connect_reuses_client_and_close_resets_it() -> None:
     client = make_client()
     redis = Mock(close=AsyncMock())
 
@@ -26,7 +25,7 @@ async def test_connect_reuses_client_and_close_resets_it():
 
 
 @pytest.mark.asyncio
-async def test_redis_operations_delegate_to_client():
+async def test_redis_operations_delegate_to_client() -> None:
     client = make_client()
     client._client = AsyncMock()
     client._client.get.return_value = b"value"
@@ -43,7 +42,7 @@ async def test_redis_operations_delegate_to_client():
 
 
 @pytest.mark.asyncio
-async def test_acquire_lock_succeeds_after_retry():
+async def test_acquire_lock_succeeds_after_retry() -> None:
     client = make_client()
     client._client = AsyncMock()
     client._client.set.side_effect = [False, True]
@@ -57,7 +56,7 @@ async def test_acquire_lock_succeeds_after_retry():
 
 
 @pytest.mark.asyncio
-async def test_acquire_lock_returns_failure_after_retries():
+async def test_acquire_lock_returns_failure_after_retries() -> None:
     client = make_client()
     client._client = AsyncMock()
     client._client.set.return_value = False
@@ -72,7 +71,7 @@ async def test_acquire_lock_returns_failure_after_retries():
 
 
 @pytest.mark.asyncio
-async def test_release_lock_returns_eval_result():
+async def test_release_lock_returns_eval_result() -> None:
     client = make_client()
     client._client = AsyncMock()
     client._client.eval.side_effect = [1, 0, RuntimeError("failed")]

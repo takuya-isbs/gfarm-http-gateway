@@ -12,6 +12,7 @@
 import ast
 import os
 import sys
+from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
 
@@ -27,7 +28,7 @@ def is_test_file(p: Path) -> bool:
     return n.endswith(".py") and n.startswith("test_")
 
 
-def walk_tests(root: Path):
+def walk_tests(root: Path) -> Iterator[Path]:
     for dirpath, _, filenames in os.walk(root):
         for fn in sorted(filenames):
             p = Path(dirpath) / fn
@@ -35,7 +36,7 @@ def walk_tests(root: Path):
                 yield p
 
 
-def extract_from_file(path: Path):
+def extract_from_file(path: Path) -> tuple[dict[str, list[str]], list[str]]:
     """Return (classes: dict[str, list[str]], functions: list[str])"""
     try:
         src = path.read_text(encoding="utf-8")
@@ -45,8 +46,8 @@ def extract_from_file(path: Path):
         tree = ast.parse(src, filename=str(path))
     except SyntaxError:
         return {}, []
-    classes = {}
-    functions = []
+    classes: dict[str, list[str]] = {}
+    functions: list[str] = []
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))\
                 and node.name.startswith("test_"):
@@ -62,7 +63,7 @@ def extract_from_file(path: Path):
     return classes, functions
 
 
-def main():
+def main() -> None:
     ymd = datetime.now().strftime("%Y%m%d")
     lines = [f"# Backend Pytest Test List ({ymd})", ""]
     for f in sorted(walk_tests(ROOT)):
