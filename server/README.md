@@ -1011,6 +1011,14 @@ warnings alone do not fail `npm run lint`. Save the baseline warning output and
 compare it with the output after the update. ESLint errors or Prettier check
 failures still fail the command.
 
+#### Update npm packages
+
+Keep each version group in a separate change. When real-Gfarm verification is
+needed, run the docker/dist E2E check below after local checks and before
+committing that group.
+
+##### Preview updates with npm-check-updates
+
 To preview available updates, run
 [npm-check-updates](https://github.com/raineorshine/npm-check-updates):
 
@@ -1021,7 +1029,7 @@ npx npm-check-updates
 The preview command is optional; `-u` can be run without it. Preview first when
 you want to inspect candidate versions before changing `package.json`.
 
-### Update Patch and Minor dependencies together
+##### Update Patch and Minor dependencies together
 
 Use `--target minor` to select Patch and Minor updates while excluding regular
 Major updates. This option also includes Minor updates to `0.x` packages, so
@@ -1049,18 +1057,31 @@ style. `npm install` resolves the dependency tree and updates
 `package-lock.json`, including transitive dependencies where allowed by their
 version ranges. Do not edit the lockfile by hand.
 
-Then verify the lockfile with a clean install and rerun the checks:
+Then verify the lockfile with a clean install, lint, and build:
 
 ```bash
 npm ci
 npm run lint
 npm run build
+```
+
+If the update changes `@playwright/test`, install its matching Chromium browser
+after `npm ci` and before running the Playwright test. From the
+`gfarm-http-gateway` repository root on c2, run:
+
+```bash
+make -C server setup-playwright
+```
+
+Then run the Chromium test from `frontend/app/react-app/`:
+
+```bash
 npm run test:unit-webui:chromium
 ```
 
 After the Patch and Minor update group passes, commit it separately.
 
-### Update Major version zero dependencies separately
+##### Update Major version zero dependencies separately
 
 Next, update only the packages in the `Major version zero` group. Replace the
 quoted placeholder with space-separated package names from the current group.
@@ -1081,7 +1102,7 @@ npm install
 Run the same checks above and commit this update separately. Review its release
 notes because a `0.x` minor update may change behavior or APIs.
 
-### Update regular Major dependencies last
+##### Update regular Major dependencies last
 
 After the Major version zero group passes and is committed, review the regular
 Major candidates. Check their release notes and compatibility, then select only
@@ -1101,6 +1122,37 @@ npm install
 ```
 
 Run the same checks above and commit these updates separately.
+
+##### Verify an update with docker/dist real-Gfarm E2E
+
+Run after the local checks and before committing an update group when real-Gfarm
+verification is needed. The docker/dist Gfarm, Keycloak, and JWT Server
+environment must already be initialized. On the Docker host, from the Gfarm
+checkout root:
+
+```bash
+cd docker/dist/http-gateway
+make up
+GFARM_HTTP_TEST_PASSWORD='<docker-dist-test-user-password>' make test-e2e
+```
+
+Notes:
+
+- Build: `make test-e2e` uses the running gfarm-http-gateway image. Run `make up`
+  first to rebuild the image and React production bundle; `make down` is not
+  required.
+- Dependency cache: Changes to `package.json` or `package-lock.json` create a
+  new Playwright dependency cache and run `npm ci`. Run `make clean-test-cache`
+  only to remove old cache entries.
+- Playwright version: Keep `@playwright/test` in
+  `./server/frontend/app/react-app/package.json` and the image tag in
+  `./server/e2e-test/playwright-docker-image.txt` at the same version. Both
+  paths are relative to the `gfarm-http-gateway` repository root. The image
+  provides the browser binaries; mismatched versions can prevent Playwright
+  from finding them. See the
+  [Playwright Docker documentation](https://playwright.dev/docs/docker).
+
+##### Review dependency changes
 
 Review both `package.json` and `package-lock.json` in the diff:
 

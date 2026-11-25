@@ -84,6 +84,9 @@ Run only the local lint checks with `make lint`: Go formatting and `go vet`, Pyt
 
 These checks use a real Gfarm. (The Web UI suite in `make test-unit-all` uses API mocks and does not require a live Gfarm.)
 
+For React app npm package updates and their verification steps, see the
+[dependency update procedure in `server/README.md`](server/README.md#to-update-react-app-dependencies).
+
 > **Important:** Every `make test-e2e` run stops c1's existing `jwt-agent`, obtains a new passphrase from the JWT Server, and starts the agent again with it.
 
 Before running the full suite, the matrix, or a single Web UI case:
