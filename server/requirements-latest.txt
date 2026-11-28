@@ -4,14 +4,8 @@ httpx
 itsdangerous
 Jinja2
 loguru
-mypy
-pytest
-pytest-cov
-pytest-asyncio
 python-jose
 python-multipart
 requests
-ruff
-types-requests
 uvicorn
 redis

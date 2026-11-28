@@ -19,6 +19,7 @@ Use this setup to run the checkout directly on c2 with debug logging and automat
   ```sh
   cd ~/gfarm/gfarm-http-gateway/server
   make setup-latest-with-sys-packages
+  make setup-dev
   ```
 
   This installs Python 3.12+, Node.js 26 via nvm, and the Redis server package.
@@ -56,8 +57,8 @@ The Go coverage target selects tests named with the `TestAPI` and `TestUnit` pre
 Prerequisites:
 
 - Node.js and project setup:
-  - If Node.js 26 is already installed, activate it (for example, `nvm use 26`) and run `make -C server setup-latest`. This target uses `INSTALL_SYS_PACKAGES=0`; it creates the Python environment and runs `npm ci` plus the frontend build, but does not install Node.js.
-  - If Node.js 26 and system packages are needed, run `make -C server setup-latest-with-sys-packages`. This sets `INSTALL_SYS_PACKAGES=1`, installs Node.js 26 through nvm, and performs the Python and frontend setup. Activate Node.js 26 in your shell with `nvm use 26` before running `make ci`.
+  - If Node.js 26 is already installed, activate it (for example, `nvm use 26`) and run `make -C server setup-latest` followed by `make -C server setup-dev`. This target uses `INSTALL_SYS_PACKAGES=0`; it creates the Python environment, installs runtime and dev/test tools, and runs `npm ci` plus the frontend build, but does not install Node.js.
+  - If Node.js 26 and system packages are needed, run `make -C server setup-latest-with-sys-packages` followed by `make -C server setup-dev`. This sets `INSTALL_SYS_PACKAGES=1`, installs Node.js 26 through nvm, and performs the Python and frontend setup. Activate Node.js 26 in your shell with `nvm use 26` before running `make ci`.
 - Install Playwright Chromium with `make -C server setup-playwright`.
 
 GitHub Actions runs `make ci` after installing these prerequisites. Run the same checks locally with `make ci`; Playwright uses CI mode with one worker in both environments. Direct `make test-unit-all` calls preserve the caller's CI setting.
@@ -70,7 +71,7 @@ GitHub Actions also runs a real-Gfarm E2E job in parallel with `make ci`:
 - Failure logs: Upload service logs when the integration job fails.
 - After the Gfarm work branch is merged, switch the workflow checkout to the default branch.
 
-Run only the local lint checks with `make lint`: Go formatting and `go vet`, Python `flake8`, React source ESLint, and ESLint/Prettier for JavaScript test files and their Playwright configuration.
+Run only the local lint checks with `make lint`: Go formatting and `go vet`, Python `ruff` and `mypy`, React source ESLint, and ESLint/Prettier for JavaScript test files and their Playwright configuration.
 
 ### Run one test while developing
 

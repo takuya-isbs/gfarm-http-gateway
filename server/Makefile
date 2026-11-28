@@ -45,10 +45,13 @@ setup-with-sys-packages:
 	INSTALL_SYS_PACKAGES=1 ./setup.sh
 
 setup-latest:
-	INSTALL_SYS_PACKAGES=0 ./setup.sh requirements_dev.txt
+	INSTALL_SYS_PACKAGES=0 ./setup.sh requirements-latest.txt
 
 setup-latest-with-sys-packages:
-	INSTALL_SYS_PACKAGES=1 ./setup.sh requirements_dev.txt
+	INSTALL_SYS_PACKAGES=1 ./setup.sh requirements-latest.txt
+
+setup-dev:
+	./venv/bin/pip3 install --upgrade -r requirements-dev.txt
 
 setup-playwright:
 	npx --prefix frontend/app/react-app playwright install --with-deps chromium
@@ -56,7 +59,9 @@ setup-playwright:
 setup-playwright-all:
 	npx --prefix frontend/app/react-app playwright install --with-deps
 
-freeze:
+setup-latest-freeze:
+	$(MAKE) clear-venv
+	$(MAKE) setup-latest
 	./venv/bin/pip3 freeze > requirements.txt
 
 clear-venv:

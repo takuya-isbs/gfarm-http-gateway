@@ -914,6 +914,7 @@ Set up the environment in `server/` before running them:
 
 - `make setup-latest` - create the Python virtual environment, install Python dependencies, and run `npm ci` plus the frontend build. Activate Node.js 26 first; this target does not install Node.js or system packages.
 - `make setup-latest-with-sys-packages` - install system packages and Node.js 26 through nvm, then set up Python and the frontend. Activate Node.js 26 with `nvm use 26` before running tests or lint in a later shell.
+- `make setup-dev` - install Python test and lint tools (`requirements-dev.txt`) into the virtual environment.
 - `make setup-playwright` - install Chromium and its system dependencies for the Playwright tests.
 - `make lint` - run Python ruff/mypy, React source ESLint, and ESLint/Prettier checks for JavaScript test files and Playwright configuration.
 
@@ -948,13 +949,15 @@ The docker/dist E2E suite is not part of `make test` above. Its purpose, command
 
 > **Note:** As a general rule, keep the implementation aligned with the latest stable and compatible library versions; do not use freezing to avoid necessary updates. If an update must be deferred, record the compatibility reason and a plan to resume updating.
 
-Install the dependencies defined in `requirements_dev.txt`, then record the
-versions actually used in `requirements.txt`.
+Install the runtime dependencies defined in `requirements-latest.txt`, then
+record the versions actually used in `requirements.txt`. Development and
+test tools (`pytest`, `ruff`, `mypy`, etc.) are managed separately in
+`requirements-dev.txt`.
 
-- Edit requirements_dev.txt
+- Edit `requirements-latest.txt` (or `requirements-dev.txt` for dev/test tools)
   - Ex.: `uvicorn>=0.34`
-- DO NOT edit requirements.txt
-- `make setup-latest`
+- DO NOT edit `requirements.txt`
+- `make setup-latest` (and `make setup-dev` for running tests/lint)
 
 ### To update requirements.txt for latest
 
@@ -966,14 +969,16 @@ However, the recommended procedure is to update and test the file locally before
 pushing:
 
 ```
-make setup-latest
+make setup-latest-freeze
+make setup-dev
 make test
-make freeze
 git diff -- requirements.txt
 git add requirements.txt
 git commit -m "build(python): update frozen requirements"
 git push
 ```
+
+> **Note:** `make setup-latest-freeze` recreates `venv` cleanly from `requirements-latest.txt` (running `clear-venv` and `setup-latest`) so development tools from `requirements-dev.txt` are not included in `requirements.txt`. Run `make setup-dev` afterwards before running `make test` or `make lint`.
 
 When the locally generated `requirements.txt` is pushed with the changes, the
 GitHub Actions update step should find no further changes to commit.
@@ -1173,7 +1178,7 @@ For available commands and test setup, see the [React app README](./frontend/app
 ### GitHub Actions
 
 - See: `../.github/workflows/`
-- The `prepare-requirements` job runs `make setup-latest` and `make freeze`, then uploads the frozen `requirements.txt` as the `frozen-requirements` artifact.
+- The `prepare-requirements` job runs `make setup-latest-freeze`, then uploads the frozen `requirements.txt` as the `frozen-requirements` artifact.
 - The `unit-test` job waits for `prepare-requirements`, then installs the frozen `requirements.txt` with `make setup` instead of resolving the latest versions again.
 - The `docker-dist-integration` job waits for `prepare-requirements` and downloads the frozen `requirements.txt` into the gfarm-http-gateway build context. The gfarm-http-gateway image installs it; the job itself does not install Python or Node.js.
 - The requirements update job waits for `prepare-requirements`, `unit-test`, and `docker-dist-integration` to succeed, then commits and pushes only `server/requirements.txt` when it has changed.

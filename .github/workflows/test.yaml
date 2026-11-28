@@ -32,13 +32,9 @@ jobs:
         with:
           node-version: 26
 
-      - name: Install latest Python dependencies
+      - name: Install latest Python dependencies and freeze requirements
         working-directory: server
-        run: make setup-latest
-
-      - name: Freeze Python dependencies
-        working-directory: server
-        run: make freeze
+        run: make setup-latest-freeze
 
       - name: Upload frozen requirements
         uses: actions/upload-artifact@v7
@@ -91,6 +87,10 @@ jobs:
       - name: Install tested Python dependencies
         working-directory: server
         run: make setup
+
+      - name: Install Python dev dependencies
+        working-directory: server
+        run: make setup-dev
 
       - name: Install Playwright browsers
         working-directory: server

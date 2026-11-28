@@ -1,0 +1,6 @@
+mypy
+pytest
+pytest-asyncio
+pytest-cov
+ruff
+types-requests

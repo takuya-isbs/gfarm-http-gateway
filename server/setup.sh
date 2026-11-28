@@ -48,7 +48,11 @@ install_python_package() {
     # $PYTHON -m venv --clear "$VENV_DIR"
     $PYTHON -m venv --upgrade "$VENV_DIR"
 
-    $PIP install -r "$REQUIREMENTS"
+    if [ "$(basename "$REQUIREMENTS")" = "requirements-latest.txt" ]; then
+        $PIP install --upgrade -r "$REQUIREMENTS"
+    else
+        $PIP install -r "$REQUIREMENTS"
+    fi
 }
 
 install_for_debian() {
