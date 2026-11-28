@@ -65,8 +65,9 @@ async function setupLoginContext(context, { initialLoggedIn = false, loginError 
         if (pathname === "/login_oidc" && method === "GET") {
             loggedIn = true;
             await route.fulfill({
-                status: 302,
-                headers: { Location: FRONTEND_URL },
+                status: 200,
+                contentType: "text/html",
+                body: `<!doctype html><script>location.replace(${JSON.stringify(FRONTEND_URL)});</script>`,
             });
         } else if (pathname.startsWith("/dir/") && method === "GET") {
             const jsonData = JSON.parse(fs.readFileSync(DIR_LIST, "utf-8"));
@@ -102,15 +103,21 @@ async function setupLoginContext(context, { initialLoggedIn = false, loginError 
         } else if (pathname === "/logout" && method === "GET") {
             loggedIn = false;
             await route.fulfill({
-                status: 303,
-                headers: { Location: FRONTEND_URL },
-                body: "",
+                status: 200,
+                contentType: "text/html",
+                body: `<!doctype html><script>location.replace(${JSON.stringify(FRONTEND_URL)});</script>`,
             });
         } else if (pathname.endsWith("/pwa.js") && method === "GET") {
             await route.fulfill({
                 status: 200,
                 contentType: "application/javascript",
                 body: pwaJsContent,
+            });
+        } else if (pathname.endsWith("/manifest.json") && method === "GET") {
+            await route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: "{}",
             });
         } else {
             const msg = `Unhandled mock API request: ${method} ${request.url()}`;
@@ -139,7 +146,7 @@ test.afterEach(() => {
 
 test("Should display the login title on the login page without error banner", async ({ page }) => {
     await page.goto(FRONTEND_URL);
-    await page.waitForURL((url) => url.pathname.endsWith("/login"));
+    await expect(page).toHaveURL(/\/login$/);
 
     await expect(page.locator("#title")).toBeVisible();
     await expect(page.locator("#error")).toBeHidden();
@@ -158,7 +165,7 @@ test("Should display error banner on login page when login error is present", as
         trackApiRequests(page);
 
         await page.goto(FRONTEND_URL);
-        await page.waitForURL((url) => url.pathname.endsWith("/login"));
+        await expect(page).toHaveURL(/\/login$/);
 
         await expect(page.locator("#error")).toBeVisible();
         await expect(page.locator("#error")).toContainText("Invalid session");
@@ -170,14 +177,14 @@ test("Should display error banner on login page when login error is present", as
 
 test("Should display the login button for OIDC", async ({ page }) => {
     await page.goto(FRONTEND_URL);
-    await page.waitForURL((url) => url.pathname.endsWith("/login"));
+    await expect(page).toHaveURL(/\/login$/);
 
     await expect(page.locator("#oidc-btn")).toBeVisible();
 });
 
 test("Should submit a selected Gfarm group user for OIDC login", async ({ page }) => {
     await page.goto(FRONTEND_URL);
-    await page.waitForURL((url) => url.pathname.endsWith("/login"));
+    await expect(page).toHaveURL(/\/login$/);
 
     await page.locator("summary").click();
     await page.fill("#gfarm-username", "groupuser1");
@@ -189,7 +196,7 @@ test("Should submit a selected Gfarm group user for OIDC login", async ({ page }
 
 test("Should log in via OIDC and show the file list", async ({ page }) => {
     await page.goto(FRONTEND_URL);
-    await page.waitForURL((url) => url.pathname.endsWith("/login"));
+    await expect(page).toHaveURL(/\/login$/);
 
     await page.click("text=Login with OpenID provider");
 
@@ -235,7 +242,7 @@ test("[Android] Should trigger install prompt when A2HS button is clicked", asyn
         trackApiRequests(page);
 
         await page.goto(FRONTEND_URL);
-        await page.waitForURL((url) => url.pathname.endsWith("/login"));
+        await expect(page).toHaveURL(/\/login$/);
 
         await page.evaluate(() => {
             const event = new Event("beforeinstallprompt");
@@ -275,7 +282,7 @@ test("[iOS] Should show instructions modal when A2HS button is clicked", async (
         trackApiRequests(page);
 
         await page.goto(FRONTEND_URL);
-        await page.waitForURL((url) => url.pathname.endsWith("/login"));
+        await expect(page).toHaveURL(/\/login$/);
 
         const installBtn = page.locator("#installBtn");
         await expect(installBtn).toBeVisible();
@@ -291,7 +298,7 @@ test("[iOS] Should show instructions modal when A2HS button is clicked", async (
 
 test("[Desktop] Should hide A2HS button", async ({ page }) => {
     await page.goto(FRONTEND_URL);
-    await page.waitForURL((url) => url.pathname.endsWith("/login"));
+    await expect(page).toHaveURL(/\/login$/);
 
     const installBtn = page.locator("#installBtn");
     await expect(installBtn).toBeHidden();

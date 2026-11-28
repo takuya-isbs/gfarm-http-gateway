@@ -94,7 +94,7 @@ jobs:
 
       - name: Install Playwright browsers
         working-directory: server
-        run: make setup-playwright
+        run: make setup-playwright-all
 
       # GitHub sets CI=true; make ci passes the same flag to local test runs.
       - name: Run CI checks

@@ -19,8 +19,9 @@ async function download(files, setError) {
         a.style.display = "none";
         document.body.appendChild(a);
         a.click();
-        a.remove();
-        window.URL.revokeObjectURL(dlurl);
+        setTimeout(() => {
+            a.remove();
+        }, 100);
     } else {
         const dlurl = `${API_URL}/zip`;
         const paths = files.map((file) => file.path);

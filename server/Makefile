@@ -1,8 +1,8 @@
-test: test-unit lint-python test-unit-webui-chromium
+test: test-unit lint-python test-unit-webui-chromium test-unit-webui-firefox
 
-test-all: test-unit lint-python test-unit-webui-chromium test-client
+test-all: test-unit lint-python test-unit-webui-chromium test-unit-webui-firefox test-client
 
-.PHONY: test test-all test-unit-webui-chromium test-unit-webui-all lint lint-python lint-frontend test-ruff test-mypy
+.PHONY: test test-all test-unit-webui-chromium test-unit-webui-firefox test-unit-webui-webkit test-unit-webui-all lint lint-python lint-frontend test-ruff test-mypy
 
 lint: lint-python lint-frontend
 
@@ -34,6 +34,12 @@ test-mypy:
 
 test-unit-webui-chromium:
 	npm --prefix frontend/app/react-app run test:unit-webui:chromium
+
+test-unit-webui-firefox:
+	npm --prefix frontend/app/react-app run test:unit-webui:firefox
+
+test-unit-webui-webkit:
+	npm --prefix frontend/app/react-app run test:unit-webui:webkit
 
 test-unit-webui-all:
 	npm --prefix frontend/app/react-app run test:unit-webui:all
